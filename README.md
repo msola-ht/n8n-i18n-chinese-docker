@@ -14,7 +14,7 @@
 docker pull hotwa/n8n-chinese:1.94.1
 ```
 
-环境变量
+环境变量设置以下环境变量，设置为中文
 
 ```shell
 - GENERIC_TIMEZONE=Asia/Shanghai  
