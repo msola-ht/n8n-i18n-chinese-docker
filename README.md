@@ -7,3 +7,16 @@
 - 自动发布到 DockerHub: `yourdockerhub/n8n-chinese:版本号`
 
 使用方法见 workflow 注释。
+
+## 使用
+
+```shell
+docker pull hotwa/n8n-chinese:1.94.1
+```
+
+环境变量
+
+```shell
+- GENERIC_TIMEZONE=Asia/Shanghai  
+- N8N_DEFAULT_LOCALE=zh-CN
+```

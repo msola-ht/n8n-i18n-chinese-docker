@@ -77,10 +77,3 @@ jobs:
         N8N_VERSION="${TAG#n8n@}"
         IMAGE_NAME=hotwa/n8n-chinese:$N8N_VERSION
         docker push $IMAGE_NAME
-
-    - name: 创建 tag (可选)
-      run: |
-        git config user.name "github-actions"
-        git config user.email "github-actions@github.com"
-        git tag ${{ steps.get_release.outputs.tag }}
-        git push origin ${{ steps.get_release.outputs.tag }}
