@@ -1,0 +1,86 @@
+name: Build n8n chinese editor-ui docker image
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'  # 每小时检查一次
+  # 可选，未来支持 repository_dispatch 事件自动触发
+
+env:
+  UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: 获取上游最新 Release
+      id: get_release
+      run: |
+        latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
+        tag=$(echo "$latest_release" | jq -r .tag_name)
+        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url')
+        echo "tag=$tag" >> $GITHUB_OUTPUT
+        echo "asset_url=$asset_url" >> $GITHUB_OUTPUT
+
+    - name: 检查是否已发布过
+      id: check_tag
+      run: |
+        tag=${{ steps.get_release.outputs.tag }}
+        if git ls-remote --tags origin | grep "refs/tags/$tag$"; then
+          echo "Tag $tag 已存在，跳过"
+          echo "exists=true" >> $GITHUB_OUTPUT
+        else
+          echo "exists=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 退出如果已发布
+      if: steps.check_tag.outputs.exists == 'true'
+      run: |
+        echo "Release 已存在，终止 workflow."
+        exit 0
+
+    - name: 下载上游 release 文件
+      run: |
+        mkdir src-dist
+        curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
+
+    - name: 解压 dist
+      run: |
+        tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
+
+    - name: 生成 Dockerfile
+      run: |
+        TAG=${{ steps.get_release.outputs.tag }}
+        N8N_VERSION="${TAG#n8n@}"  # 去掉前缀
+        cat <<EOF > Dockerfile
+        FROM n8nio/n8n:$N8N_VERSION
+        COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
+        EOF
+
+    - name: 构建镜像
+      run: |
+        TAG=${{ steps.get_release.outputs.tag }}
+        N8N_VERSION="${TAG#n8n@}"
+        IMAGE_NAME=yourdockerhub/n8n-chinese:$N8N_VERSION
+        docker build -t $IMAGE_NAME .
+
+    - name: 登录 DockerHub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: 推送镜像
+      run: |
+        TAG=${{ steps.get_release.outputs.tag }}
+        N8N_VERSION="${TAG#n8n@}"
+        IMAGE_NAME=yourdockerhub/n8n-chinese:$N8N_VERSION
+        docker push $IMAGE_NAME
+
+    - name: 创建 tag (可选)
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git tag ${{ steps.get_release.outputs.tag }}
+        git push origin ${{ steps.get_release.outputs.tag }}
