@@ -4,7 +4,7 @@
 
 - 自动同步上游 Release
 - 自动构建中文 dist
-- 自动发布到 DockerHub: `yourdockerhub/n8n-chinese:版本号`
+- 自动发布到 DockerHub: `hotwa/n8n-chinese:版本号`
 
 使用方法见 workflow 注释。
 
