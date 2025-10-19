@@ -1,11 +1,9 @@
-name: Build n8n Chinese Editor-UI Docker Image # 工作流名称，稍微修改更清晰
+name: Build n8n Chinese Editor-UI Docker Image # 工作流名称
 
 on:
   workflow_dispatch: # 手动触发工作流
   schedule:
     - cron: '0 * * * *'  # 每小时检查一次上游是否有新版本
-  # 注意：由于我们会在工作流结束时创建tag，所以不再需要 push.tags 触发器来检测自身仓库的tag
-  # 如果您希望在自身仓库有新tag时也触发，可以保留，但可能会与schedule触发器逻辑冲突
 
 env:
   UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese # 上游仓库，用于获取最新发布
@@ -30,11 +28,18 @@ jobs:
         echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT" # 将下载链接设置为输出
         echo "Detected upstream tag: $tag"
 
-    - name: 检查当前仓库是否已发布过此版本 # 步骤3: 检查当前仓库是否已存在相同的 Git Tag
+    - name: Get N8N Version from Tag # 步骤3: 从上游Git标签中提取纯粹的n8n版本号
+      id: get_n8n_version
+      run: |
+        TAG_REF=${{ steps.get_release.outputs.tag }} # 获取上一步骤的完整tag
+        N8N_VERSION="${TAG_REF#n8n@}"      # 提取出 '1.115.3'
+        echo "::set-output name=n8n_version::$N8N_VERSION" # 将版本号设置为输出，供后续步骤使用
+        echo "Extracted N8N Version: $N8N_VERSION"
+
+    - name: 检查当前仓库是否已发布过此版本 # 步骤4: 检查当前仓库是否已存在相同的 Git Tag
       id: check_local_tag
       run: |
         tag_to_check=${{ steps.get_release.outputs.tag }}
-        # 使用 git tag -l 检查本地仓库的tag，并判断是否存在
         if git tag -l | grep -q "^$tag_to_check$"; then
           echo "Tag $tag_to_check 已存在于当前仓库，跳过构建和推送。"
           echo "exists=true" >> "$GITHUB_OUTPUT"
@@ -43,27 +48,26 @@ jobs:
           echo "exists=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: 退出如果已发布 # 步骤4: 如果本地已存在此版本标签，则终止工作流
+    - name: 退出如果已发布 # 步骤5: 如果本地已存在此版本标签，则终止工作流
       if: steps.check_local_tag.outputs.exists == 'true'
       run: |
         echo "Release 已存在于当前仓库，终止 workflow."
         exit 0
 
-    - name: 下载上游 release 文件 # 步骤5: 下载上游的 editor-ui dist 文件
+    - name: 下载上游 release 文件 # 步骤6: 下载上游的 editor-ui dist 文件
       run: |
         mkdir -p src-dist # 确保目录存在
         curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
         echo "Downloaded ${{ steps.get_release.outputs.asset_url }}"
 
-    - name: 解压 dist 文件 # 步骤6: 解压下载的 tar.gz 文件
+    - name: 解压 dist 文件 # 步骤7: 解压下载的 tar.gz 文件
       run: |
         tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
         echo "Extracted dist files to src-dist/dist"
 
-    - name: 生成 Dockerfile # 步骤7: 动态生成 Dockerfile
+    - name: 生成 Dockerfile # 步骤8: 动态生成 Dockerfile
       run: |
-        TAG=${{ steps.get_release.outputs.tag }}
-        N8N_VERSION="${TAG#n8n@}"  # 从上游tag中提取n8n版本号
+        N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
         echo "Generating Dockerfile for n8n version: $N8N_VERSION"
         cat <<EOF > Dockerfile
         FROM n8nio/n8n:$N8N_VERSION
@@ -83,28 +87,28 @@ jobs:
         EOF
         cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
 
-    - name: Set up Docker Buildx # 步骤8: 设置Docker Buildx，用于更高效和安全的构建
+    - name: Set up Docker Buildx # 步骤9: 设置Docker Buildx，用于更高效和安全的构建
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to Docker Hub # 步骤9: 登录到Docker Hub
+    - name: Log in to Docker Hub # 步骤10: 登录到Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Build and push Docker image # 步骤10: 构建并推送Docker镜像 (同时打上版本号和latest标签)
+    - name: Build and push Docker image # 步骤11: 构建并推送Docker镜像 (同时打上版本号和latest标签)
       uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
       with:
         context: . # Dockerfile 所在的上下文路径
         push: true # 启用推送
-        tags: | # 定义要推送的标签，可以同时定义多个
-          lunare/n8n-chinese:${{ steps.get_release.outputs.tag }} # 完整的上游tag作为版本号，例如 lunare/n8n-chinese:n8n@1.115.3
-          lunare/n8n-chinese:${{ steps.get_release.outputs.n8n_version }} # 仅版本号，例如 lunare/n8n-chinese:1.115.3 (可选，看您喜欢哪种标签格式)
-          lunare/n8n-chinese:latest # 'latest' 标签
+        tags: | # 定义要推送的标签，每行一个，不要包含行内注释
+          lunare/n8n-chinese:${{ steps.get_release.outputs.tag }} # 例如 lunare/n8n-chinese:n8n@1.115.3
+          lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }} # 例如 lunare/n8n-chinese:1.115.3
+          lunare/n8n-chinese:latest
         cache-from: type=gha # 启用GitHub Actions缓存
         cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
 
-    - name: Create Git Tag # 步骤11: 在当前仓库创建与上游Release相同的Git Tag
+    - name: Create Git Tag # 步骤12: 在当前仓库创建与上游Release相同的Git Tag
       env:
         GH_TOKEN: ${{ github.token }} # GitHub Actions 默认的 GITHUB_TOKEN 具有创建标签的权限
       run: |
@@ -115,4 +119,3 @@ jobs:
         git tag "$TAG_NAME"
         git push origin "$TAG_NAME"
         echo "Successfully created and pushed Git tag $TAG_NAME."
-
