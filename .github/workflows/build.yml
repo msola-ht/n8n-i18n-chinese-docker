@@ -51,7 +51,12 @@ jobs:
         echo "CLEAN_DOCKERHUB_USERNAME_LENGTH: ${#CLEAN_DOCKERHUB_USERNAME}"
         echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV" # 将清理后的用户名设置为环境变量，供后续步骤使用
 
-    - name: 检查当前仓库是否已发布过此版本 # 步骤5: 检查当前仓库是否已存在相同的 Git Tag (防止重复构建)
+    - name: Checkout for Git Tag Check # 步骤5: 再次拉取代码，因为之前的 Checkout 可能在 detach HEAD 状态
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # 获取所有历史，包括标签，以便检查
+
+    - name: 检查当前仓库是否已发布过此版本 # 步骤6: 检查当前仓库是否已存在相同的 Git Tag (防止重复构建)
       id: check_local_tag
       run: |
         tag_to_check=${{ steps.get_release.outputs.tag }}
@@ -63,24 +68,24 @@ jobs:
           echo "exists=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: 退出如果已发布 # 步骤6: 如果本地已存在此版本标签，则终止工作流
+    - name: 退出如果已发布 # 步骤7: 如果本地已存在此版本标签，则终止工作流
       if: steps.check_local_tag.outputs.exists == 'true'
       run: |
         echo "Release 已存在于当前仓库，终止 workflow."
         exit 0
 
-    - name: 下载上游 release 文件 # 步骤7: 下载上游的 editor-ui dist 文件
+    - name: 下载上游 release 文件 # 步骤8: 下载上游的 editor-ui dist 文件
       run: |
         mkdir -p src-dist
         curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
         echo "Downloaded ${{ steps.get_release.outputs.asset_url }}"
 
-    - name: 解压 dist 文件 # 步骤8: 解压下载的 tar.gz 文件
+    - name: 解压 dist 文件 # 步骤9: 解压下载的 tar.gz 文件
       run: |
         tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
         echo "Extracted dist files to src-dist/dist"
 
-    - name: 生成 Dockerfile # 步骤9: 动态生成 Dockerfile
+    - name: 生成 Dockerfile # 步骤10: 动态生成 Dockerfile
       run: |
         N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
         echo "Generating Dockerfile for n8n version: $N8N_VERSION"
@@ -99,16 +104,16 @@ jobs:
         EOF
         cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
 
-    - name: Set up Docker Buildx # 步骤10: 设置Docker Buildx，用于更高效和安全的构建
+    - name: Set up Docker Buildx # 步骤11: 设置Docker Buildx，用于更高效和安全的构建
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to Docker Hub # 步骤11: 登录到Docker Hub
+    - name: Log in to Docker Hub # 步骤12: 登录到Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Debug Final Image Tags # 步骤12: 打印最终的标签字符串，方便调试
+    - name: Debug Final Image Tags # 步骤13: 打印最终的标签字符串，方便调试
       run: |
         # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
         echo "--- Debugging Final Image Tags ---"
@@ -116,23 +121,23 @@ jobs:
         echo "Latest Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest'"
         echo "----------------------------------"
 
-    - name: Build and push Docker image # 步骤13: 构建并推送Docker镜像 (同时打上版本号和latest标签)
+    - name: Build and push Docker image # 步骤14: 构建并推送Docker镜像 (同时打上版本号和latest标签)
       uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
       with:
         context: . # Dockerfile 所在的上下文路径
         push: true # 启用推送
-        # 定义要推送的标签，每行一个，确保这里**没有任何行内注释**
+        # 定义要推送的标签，每行一个，这里绝对不能有行内注释！
         tags: |
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }} # 例如 lunare/n8n-chinese:1.115.3
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest # 'latest' 标签
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
         cache-from: type=gha # 启用GitHub Actions缓存
         cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
 
-    - name: Create Git Tag # 步骤14: 在当前仓库创建与上游Release相同的Git Tag
+    - name: Create Git Tag # 步骤15: 在当前仓库创建与上游Release相同的Git Tag
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        TAG_NAME=${{ steps.get_release.outputs.tag }} # Git Tag 允许包含 @ 符号，所以这里使用原始的 tag
+        TAG_NAME=${{ steps.get_release.outputs.tag }} # Git Tag 允许包含 @ 符号
         echo "Creating Git tag: $TAG_NAME"
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
