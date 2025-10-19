@@ -57,11 +57,9 @@ jobs:
         FROM n8nio/n8n:$N8N_VERSION
 
         # 安装额外的系统依赖
-        # ffmpeg 用于视频处理，字体相关库 (fontconfig, freetype, harfbuzz, fribidi) 用于文本渲染，
-        # tini 用于更好的容器启动管理（如果基础镜像未包含）
-        # 注意：n8n 基础镜像通常基于 Alpine Linux，所以使用 apk 包管理器
+        # 确保添加 community 仓库，因为一些包可能在那里
         RUN apk update \\
-            && apk add --no-cache \\
+            && apk add --no-cache --repository http://dl-cdn.alpinelinux.org/alpine/v$(cat /etc/alpine-release | cut -d'.' -f1,2)/community \\
             ffmpeg \\
             fontconfig \\
             freetype \\
