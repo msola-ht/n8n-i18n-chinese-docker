@@ -73,7 +73,7 @@ jobs:
       run: |
         TAG=${{ steps.get_release.outputs.tag }}
         N8N_VERSION="${TAG#n8n@}"
-        IMAGE_NAME=hotwa/n8n-chinese:$N8N_VERSION
+        IMAGE_NAME=lunare/n8n-chinese:$N8N_VERSION
         docker build -t $IMAGE_NAME .
 
     - name: 登录 DockerHub
