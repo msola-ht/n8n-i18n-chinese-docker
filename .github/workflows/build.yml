@@ -101,9 +101,10 @@ jobs:
       with:
         context: . # Dockerfile 所在的上下文路径
         push: true # 启用推送
-        tags: | # 定义要推送的标签，每行一个，不要包含行内注释
-          lunare/n8n-chinese:${{ steps.get_release.outputs.tag }} # 例如 lunare/n8n-chinese:n8n@1.115.3
-          lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }} # 例如 lunare/n8n-chinese:1.115.3
+        # 定义要推送的标签，每行一个，请确保这里**没有任何行内注释**
+        tags: |
+          lunare/n8n-chinese:${{ steps.get_release.outputs.tag }}
+          lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
           lunare/n8n-chinese:latest
         cache-from: type=gha # 启用GitHub Actions缓存
         cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
