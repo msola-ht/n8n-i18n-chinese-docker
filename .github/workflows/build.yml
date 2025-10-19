@@ -22,18 +22,42 @@ jobs:
       id: get_release
       run: |
         latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
-        # 使用 xargs 确保去除所有前导和尾随空格
+        # 使用 xargs 确保去除所有前导和尾部空格
         tag=$(echo "$latest_release" | jq -r .tag_name | xargs) # 获取上游的 Git Tag，例如 n8n@1.115.3
         asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url' | xargs) # 获取下载链接
         echo "tag=$tag" >> "$GITHUB_OUTPUT" # 将tag设置为输出
         echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT" # 将下载链接设置为输出
         echo "Detected upstream tag (quoted for clarity): '$tag'" # 打印带引号的tag，方便调试空格
 
+    # 新增步骤：检查当前仓库是否已存在与上游最新 release 相同的 Git Tag
+    - name: 检查是否已发布过此版本
+      id: check_tag
+      run: |
+        UPSTREAM_TAG="${{ steps.get_release.outputs.tag }}"
+        echo "正在检查当前仓库是否已存在 Git Tag: '$UPSTREAM_TAG'"
+        # 使用 git ls-remote 检查远程仓库（origin）中是否存在该标签
+        # grep -q 用于静默输出，只返回退出状态码
+        if git ls-remote --tags origin | grep -q "refs/tags/$UPSTREAM_TAG$"; then
+          echo "检测到标签 '$UPSTREAM_TAG' 已存在于当前仓库，此版本已发布过。"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "标签 '$UPSTREAM_TAG' 不存在于当前仓库，将继续构建新版本。"
+          echo "exists=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    # 新增步骤：如果已发布过，则终止 workflow
+    - name: 终止 workflow 如果此版本已发布
+      if: steps.check_tag.outputs.exists == 'true'
+      run: |
+        echo "检测到上游最新版本已在当前仓库发布过，无需重复构建和推送。Workflow 将提前终止。"
+        # exit 0 表示成功退出，GitHub Actions 会将此 job 标记为成功，并跳过后续步骤。
+        exit 0
+
     - name: Get N8N Version from Tag # 步骤3: 从上游Git标签中提取纯粹的n8n版本号
       id: get_n8n_version
       run: |
         TAG_REF="${{ steps.get_release.outputs.tag }}"
-        # 提取后再次使用 xargs 确保去除所有前导和尾随空格
+        # 提取后再次使用 xargs 确保去除所有前导和尾部空格
         N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs) # 提取出 '1.115.3'
         echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT" # 将版本号设置为输出
         echo "Extracted N8N Version (quoted for clarity): '$N8N_VERSION'" # 打印带引号的版本号，方便调试空格
@@ -115,8 +139,8 @@ jobs:
       with:
         context: . # Dockerfile 所在的上下文路径
         push: true # 启用推送
-        # 定义要推送的标签，每行一个，这里绝对不能有行内注释！
-        tags: |
+        # 定义要推送的标签，每行一个
+        标签: |
           ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
           ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
         cache-from: type=gha # 启用GitHub Actions缓存
@@ -125,14 +149,16 @@ jobs:
     - name: Update README with new version # 步骤12: 更新README中的版本标签
       run: |
         NEW_VERSION="${{ steps.get_n8n_version.outputs.n8n_version }}"
-        echo "Updating README.md with version: $NEW_VERSION"
+        DOCKER_USER="${{ env.DOCKERHUB_USERNAME }}" # 获取清理后的 Docker Hub 用户名
+        echo "Updating README.md with version: $NEW_VERSION for Docker user: $DOCKER_USER"
 
         # 更新 README.md 中的版本标签
-        sed -i "s|lunare/n8n-chinese:[0-9]\+\.[0-9]\+\.[0-9]\+|lunare/n8n-chinese:$NEW_VERSION|g" README.md
+        # 动态替换 Docker 用户名和版本号
+        sed -i "s|${DOCKER_USER}/n8n-chinese:[0-9]\+\.[0-9]\+\.[0-9]\+|${DOCKER_USER}/n8n-chinese:$NEW_VERSION|g" README.md
 
         # 显示更新内容
         echo "Updated README.md content:"
-        grep -n "lunare/n8n-chinese:" README.md || true
+        grep -n "${DOCKER_USER}/n8n-chinese:" README.md || true
 
         # 配置 Git 用户信息
         git config --local user.email "action@github.com"
@@ -145,7 +171,7 @@ jobs:
         else
           echo "🤖 自动更新 README 版本标签至 ${NEW_VERSION}" > commit_message.txt
           echo "" >> commit_message.txt
-          echo "- 更新所有 lunare/n8n-chinese 版本标签引用" >> commit_message.txt
+          echo "- 更新所有 ${DOCKER_USER}/n8n-chinese 版本标签引用" >> commit_message.txt
           echo "- 版本号: ${NEW_VERSION}" >> commit_message.txt
           echo "- 自动构建流程更新" >> commit_message.txt
           echo "" >> commit_message.txt
@@ -155,5 +181,8 @@ jobs:
 
           git commit -F commit_message.txt
           rm commit_message.txt
+          # 推送新的 Git Tag 到当前仓库
+          git tag "$UPSTREAM_TAG" # 使用上游的 tag 作为当前仓库的 tag
+          git push origin "$UPSTREAM_TAG"
           git push
         fi
