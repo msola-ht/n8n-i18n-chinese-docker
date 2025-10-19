@@ -35,8 +35,22 @@ jobs:
         TAG_REF="${{ steps.get_release.outputs.tag }}"
         # 提取后再次使用 xargs 确保去除所有前导和尾随空格
         N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
-        echo "::set-output name=n8n_version::$N8N_VERSION"
+        # 更新为推荐的输出方式
+        echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT"
         echo "Extracted N8N Version (quoted for clarity): '$N8N_VERSION'" # 打印带引号的版本号，方便调试空格
+
+    - name: Debug Docker Hub Username # 新增调试步骤：检查 DOCKERHUB_USERNAME 是否有空格
+      run: |
+        DOCKERHUB_USERNAME_VAL="${{ secrets.DOCKERHUB_USERNAME }}"
+        echo "--- Debugging DOCKERHUB_USERNAME ---"
+        echo "Username (quoted): '$DOCKERHUB_USERNAME_VAL'"
+        echo "Length of username: ${#DOCKERHUB_USERNAME_VAL}"
+        echo "------------------------------------"
+        # 增加一个防御性处理，确保 DOCKERHUB_USERNAME 不包含空格，并输出到环境变量
+        CLEAN_DOCKERHUB_USERNAME=$(echo "$DOCKERHUB_USERNAME_VAL" | xargs)
+        echo "CLEAN_DOCKERHUB_USERNAME (quoted): '$CLEAN_DOCKERHUB_USERNAME'"
+        echo "CLEAN_DOCKERHUB_USERNAME_LENGTH: ${#CLEAN_DOCKERHUB_USERNAME}"
+        echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV" # 将清理后的用户名设置为环境变量
 
     - name: 检查当前仓库是否已发布过此版本
       id: check_local_tag
@@ -95,23 +109,25 @@ jobs:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Debug Final Image Tags # 新增调试步骤，打印最终的标签字符串
+    - name: Debug Final Image Tags # 打印最终的标签字符串
       run: |
-        echo "--- Debugging Image Tags ---"
-        echo "Full Tag: 'lunare/n8n-chinese:${{ steps.get_release.outputs.tag }}'"
-        echo "Version Tag: 'lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}'"
-        echo "Latest Tag: 'lunare/n8n-chinese:latest'"
-        echo "----------------------------"
+        # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
+        echo "--- Debugging Final Image Tags ---"
+        echo "Full Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_release.outputs.tag }}'"
+        echo "Version Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}'"
+        echo "Latest Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest'"
+        echo "----------------------------------"
 
     - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
         push: true
+        # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
         tags: |
-          lunare/n8n-chinese:${{ steps.get_release.outputs.tag }}
-          lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
-          lunare/n8n-chinese:latest
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_release.outputs.tag }}
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
