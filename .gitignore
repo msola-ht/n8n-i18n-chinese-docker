@@ -1,0 +1,22 @@
+# Claude 配置文件 - 不推送到仓库
+.claude/
+
+# 临时构建文件
+src-dist/
+Dockerfile
+
+# 日志文件
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# IDE 文件
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 依赖目录
+node_modules/

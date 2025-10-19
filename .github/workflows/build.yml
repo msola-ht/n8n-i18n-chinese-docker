@@ -1,0 +1,123 @@
+name: Build n8n Chinese Editor-UI Docker Image
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'  # 每小时检查一次
+
+env:
+  UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository # 步骤1: 拉取当前仓库代码
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # 获取所有历史，包括标签，以便检查
+
+    - name: 获取上游最新 Release # 步骤2: 从上游仓库获取最新发布信息
+      id: get_release
+      run: |
+        latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
+        # 使用 xargs 确保去除所有前导和尾随空格
+        tag=$(echo "$latest_release" | jq -r .tag_name | xargs) # 获取上游的 Git Tag，例如 n8n@1.115.3
+        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url' | xargs) # 获取下载链接
+        echo "tag=$tag" >> "$GITHUB_OUTPUT" # 将tag设置为输出
+        echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT" # 将下载链接设置为输出
+        echo "Detected upstream tag (quoted for clarity): '$tag'" # 打印带引号的tag，方便调试空格
+
+    - name: Get N8N Version from Tag # 步骤3: 从上游Git标签中提取纯粹的n8n版本号
+      id: get_n8n_version
+      run: |
+        TAG_REF="${{ steps.get_release.outputs.tag }}"
+        # 提取后再次使用 xargs 确保去除所有前导和尾随空格
+        N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs) # 提取出 '1.115.3'
+        echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT" # 将版本号设置为输出
+        echo "Extracted N8N Version (quoted for clarity): '$N8N_VERSION'" # 打印带引号的版本号，方便调试空格
+
+    - name: Debug Docker Hub Username # 步骤4: 检查 DOCKERHUB_USERNAME 是否有空格，并清理
+      run: |
+        DOCKERHUB_USERNAME_VAL="${{ secrets.DOCKERHUB_USERNAME }}"
+        echo "--- Debugging DOCKERHUB_USERNAME ---"
+        echo "Username (quoted): '$DOCKERHUB_USERNAME_VAL'"
+        echo "Length of username: ${#DOCKERHUB_USERNAME_VAL}"
+        echo "------------------------------------"
+        # 增加一个防御性处理，确保 DOCKERHUB_USERNAME 不包含空格，并输出到环境变量
+        CLEAN_DOCKERHUB_USERNAME=$(echo "$DOCKERHUB_USERNAME_VAL" | xargs)
+        echo "CLEAN_DOCKERHUB_USERNAME (quoted): '$CLEAN_DOCKERHUB_USERNAME'"
+        echo "CLEAN_DOCKERHUB_USERNAME_LENGTH: ${#CLEAN_DOCKERHUB_USERNAME}"
+        echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV" # 将清理后的用户名设置为环境变量，供后续步骤使用
+
+    # 移除了检查本地 Git Tag 的步骤，因为不再需要本地 Git Tag 来判断是否跳过构建
+    # 这样每次上游有新版本，都会尝试构建并推送到 Docker Hub
+
+    - name: 下载上游 release 文件 # 步骤5: 下载上游的 editor-ui dist 文件
+      run: |
+        mkdir -p src-dist
+        curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
+        echo "Downloaded ${{ steps.get_release.outputs.asset_url }}"
+
+    - name: 解压 dist 文件 # 步骤6: 解压下载的 tar.gz 文件
+      run: |
+        tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
+        echo "Extracted dist files to src-dist/dist"
+
+    - name: 生成 Dockerfile (多阶段构建) # 步骤7: 动态生成 Dockerfile，现在使用多阶段构建
+      run: |
+        N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
+        echo "Generating Multi-stage Dockerfile for n8n version: $N8N_VERSION"
+        cat <<EOF > Dockerfile
+        # --- Stage 1: ui_holder (用于从构建上下文复制 dist 文件) ---
+        # 这一阶段使用一个轻量级的基础镜像，只为了“持有”我们已下载和解压的 dist 文件。
+        # 这样做可以确保最终镜像只包含这些文件，而不是整个 src-dist 目录的临时内容。
+        FROM alpine:latest as ui_holder
+        WORKDIR /app
+        # 将 GitHub Actions Runner 上已存在的 src-dist/dist 目录复制到这一阶段的镜像中
+        COPY src-dist/dist /app/dist
+
+        # --- Stage 2: Final n8n Image (最终镜像) ---
+        FROM n8nio/n8n:$N8N_VERSION
+        USER root
+
+        RUN apk update \\
+            && apk add --no-cache ffmpeg \\
+            && rm -rf /var/cache/apk/*
+
+        USER node
+
+        # 从 ui_holder 阶段复制纯净的 dist 文件到 n8n 的 editor-ui 目录
+        COPY --from=ui_holder /app/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
+        EOF
+        cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
+
+    - name: Set up Docker Buildx # 步骤8: 设置Docker Buildx，用于更高效和安全的构建
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Docker Hub # 步骤9: 登录到Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Debug Final Image Tags # 步骤10: 打印最终的标签字符串，方便调试
+      run: |
+        # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
+        echo "--- Debugging Final Image Tags ---"
+        echo "Version Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}'"
+        echo "Latest Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest'"
+        echo "----------------------------------"
+
+    - name: Build and push Docker image # 步骤11: 构建并推送Docker镜像 (同时打上版本号和latest标签)
+      uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
+      with:
+        context: . # Dockerfile 所在的上下文路径
+        push: true # 启用推送
+        # 定义要推送的标签，每行一个，这里绝对不能有行内注释！
+        tags: |
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
+        cache-from: type=gha # 启用GitHub Actions缓存
+        cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
