@@ -89,15 +89,12 @@ jobs:
 
         USER root
 
-        # 仅安装 ffmpeg
-        # 注意：n8n 基础镜像通常基于 Alpine Linux，所以使用 apk 包管理器
         RUN apk update \\
             && apk add --no-cache ffmpeg \\
             && rm -rf /var/cache/apk/*
 
         USER node
 
-        # 复制解压后的文件到 n8n editor-ui 的 dist 目录
         COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
         EOF
         cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
@@ -115,7 +112,6 @@ jobs:
       run: |
         # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
         echo "--- Debugging Final Image Tags ---"
-        echo "Full Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_release.outputs.tag }}'"
         echo "Version Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}'"
         echo "Latest Tag: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest'"
         echo "----------------------------------"
@@ -127,17 +123,16 @@ jobs:
         push: true # 启用推送
         # 定义要推送的标签，每行一个，确保这里**没有任何行内注释**
         tags: |
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_release.outputs.tag }}
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }} # 例如 lunare/n8n-chinese:1.115.3
+          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest # 'latest' 标签
         cache-from: type=gha # 启用GitHub Actions缓存
         cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
 
     - name: Create Git Tag # 步骤14: 在当前仓库创建与上游Release相同的Git Tag
       env:
-        GH_TOKEN: ${{ github.token }} # GitHub Actions 默认的 GITHUB_TOKEN 具有创建标签的权限
+        GH_TOKEN: ${{ github.token }}
       run: |
-        TAG_NAME=${{ steps.get_release.outputs.tag }} # 使用上游的完整tag名
+        TAG_NAME=${{ steps.get_release.outputs.tag }} # Git Tag 允许包含 @ 符号，所以这里使用原始的 tag
         echo "Creating Git tag: $TAG_NAME"
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
