@@ -1,42 +1,44 @@
-name: Build n8n Chinese Editor-UI Docker Image # 工作流名称
+name: Build n8n Chinese Editor-UI Docker Image
 
 on:
-  workflow_dispatch: # 手动触发工作流
+  workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'  # 每小时检查一次上游是否有新版本
+    - cron: '0 * * * *'
 
 env:
-  UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese # 上游仓库，用于获取最新发布
+  UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest # 运行环境
+    runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout repository # 步骤1: 拉取当前仓库代码
+    - name: Checkout repository
       uses: actions/checkout@v3
       with:
-        fetch-depth: 0 # 获取所有历史，包括标签，以便检查
+        fetch-depth: 0
 
-    - name: 获取上游最新 Release # 步骤2: 从上游仓库获取最新发布信息
+    - name: 获取上游最新 Release
       id: get_release
       run: |
         latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
-        tag=$(echo "$latest_release" | jq -r .tag_name) # 获取上游的 Git Tag，例如 n8n@1.115.3
-        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url') # 获取下载链接
-        echo "tag=$tag" >> "$GITHUB_OUTPUT" # 将tag设置为输出
-        echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT" # 将下载链接设置为输出
-        echo "Detected upstream tag: $tag"
+        # 使用 xargs 确保去除所有前导和尾随空格
+        tag=$(echo "$latest_release" | jq -r .tag_name | xargs)
+        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url' | xargs)
+        echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT"
+        echo "Detected upstream tag (quoted for clarity): '$tag'" # 打印带引号的tag，方便调试空格
 
-    - name: Get N8N Version from Tag # 步骤3: 从上游Git标签中提取纯粹的n8n版本号
+    - name: Get N8N Version from Tag
       id: get_n8n_version
       run: |
-        TAG_REF=${{ steps.get_release.outputs.tag }} # 获取上一步骤的完整tag
-        N8N_VERSION="${TAG_REF#n8n@}"      # 提取出 '1.115.3'
-        echo "::set-output name=n8n_version::$N8N_VERSION" # 将版本号设置为输出，供后续步骤使用
-        echo "Extracted N8N Version: $N8N_VERSION"
+        TAG_REF="${{ steps.get_release.outputs.tag }}"
+        # 提取后再次使用 xargs 确保去除所有前导和尾随空格
+        N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
+        echo "::set-output name=n8n_version::$N8N_VERSION"
+        echo "Extracted N8N Version (quoted for clarity): '$N8N_VERSION'" # 打印带引号的版本号，方便调试空格
 
-    - name: 检查当前仓库是否已发布过此版本 # 步骤4: 检查当前仓库是否已存在相同的 Git Tag
+    - name: 检查当前仓库是否已发布过此版本
       id: check_local_tag
       run: |
         tag_to_check=${{ steps.get_release.outputs.tag }}
@@ -48,72 +50,76 @@ jobs:
           echo "exists=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: 退出如果已发布 # 步骤5: 如果本地已存在此版本标签，则终止工作流
+    - name: 退出如果已发布
       if: steps.check_local_tag.outputs.exists == 'true'
       run: |
         echo "Release 已存在于当前仓库，终止 workflow."
         exit 0
 
-    - name: 下载上游 release 文件 # 步骤6: 下载上游的 editor-ui dist 文件
+    - name: 下载上游 release 文件
       run: |
-        mkdir -p src-dist # 确保目录存在
+        mkdir -p src-dist
         curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
         echo "Downloaded ${{ steps.get_release.outputs.asset_url }}"
 
-    - name: 解压 dist 文件 # 步骤7: 解压下载的 tar.gz 文件
+    - name: 解压 dist 文件
       run: |
         tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
         echo "Extracted dist files to src-dist/dist"
 
-    - name: 生成 Dockerfile # 步骤8: 动态生成 Dockerfile
+    - name: 生成 Dockerfile
       run: |
-        N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
+        N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }}
         echo "Generating Dockerfile for n8n version: $N8N_VERSION"
         cat <<EOF > Dockerfile
         FROM n8nio/n8n:$N8N_VERSION
 
         USER root
 
-        # 仅安装 ffmpeg
-        # 注意：n8n 基础镜像通常基于 Alpine Linux，所以使用 apk 包管理器
         RUN apk update \\
             && apk add --no-cache ffmpeg \\
             && rm -rf /var/cache/apk/*
 
         USER node
 
-        # 复制解压后的文件到 n8n editor-ui 的 dist 目录
         COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
         EOF
-        cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
+        cat Dockerfile
 
-    - name: Set up Docker Buildx # 步骤9: 设置Docker Buildx，用于更高效和安全的构建
+    - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Log in to Docker Hub # 步骤10: 登录到Docker Hub
+    - name: Log in to Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: Build and push Docker image # 步骤11: 构建并推送Docker镜像 (同时打上版本号和latest标签)
-      uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
+    - name: Debug Final Image Tags # 新增调试步骤，打印最终的标签字符串
+      run: |
+        echo "--- Debugging Image Tags ---"
+        echo "Full Tag: 'lunare/n8n-chinese:${{ steps.get_release.outputs.tag }}'"
+        echo "Version Tag: 'lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}'"
+        echo "Latest Tag: 'lunare/n8n-chinese:latest'"
+        echo "----------------------------"
+
+    - name: Build and push Docker image
+      uses: docker/build-push-action@v5
       with:
-        context: . # Dockerfile 所在的上下文路径
-        push: true # 启用推送
-        # 定义要推送的标签，每行一个，请确保这里**没有任何行内注释**
+        context: .
+        push: true
         tags: |
           lunare/n8n-chinese:${{ steps.get_release.outputs.tag }}
           lunare/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
           lunare/n8n-chinese:latest
-        cache-from: type=gha # 启用GitHub Actions缓存
-        cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
 
-    - name: Create Git Tag # 步骤12: 在当前仓库创建与上游Release相同的Git Tag
+    - name: Create Git Tag
       env:
-        GH_TOKEN: ${{ github.token }} # GitHub Actions 默认的 GITHUB_TOKEN 具有创建标签的权限
+        GH_TOKEN: ${{ github.token }}
       run: |
-        TAG_NAME=${{ steps.get_release.outputs.tag }} # 使用上游的完整tag名
+        TAG_NAME=${{ steps.get_release.outputs.tag }}
         echo "Creating Git tag: $TAG_NAME"
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
