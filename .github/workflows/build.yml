@@ -143,9 +143,9 @@ jobs:
         if git diff --staged --quiet; then
           echo "No changes to README.md"
         else
-          COMMIT_MESSAGE="🤖 自动更新 README 版本标签至 ${NEW_VERSION}"
-
-          COMMIT_MESSAGE="$COMMIT_MESSAGE
+          git commit -m |
+            cat <<EOF
+🤖 自动更新 README 版本标签至 ${NEW_VERSION}
 
 - 更新所有 lunare/n8n-chinese 版本标签引用
 - 版本号: ${NEW_VERSION}
@@ -153,8 +153,7 @@ jobs:
 
 🤖 Generated with GitHub Actions
 
-Co-Authored-By: GitHub Action <action@github.com>"
-
-          git commit -m "$COMMIT_MESSAGE"
+Co-Authored-By: GitHub Action <action@github.com>
+EOF
           git push
         fi
