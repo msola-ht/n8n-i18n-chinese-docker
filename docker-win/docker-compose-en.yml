@@ -1,0 +1,36 @@
+# Docker Compose file for deploying the n8n service.
+# For more n8n configuration details, please refer to the official documentation: https://docs.n8n.io/hosting/configuration/
+
+volumes:
+  n8n: # Docker anonymous volume used to persist n8n's core data.
+       # This includes configurations, workflows, credentials, and the SQLite database, ensuring data persistence across container restarts.
+
+services:
+  n8n:
+    # Removed build configuration to directly use a pre-built Docker image.
+    image: lunare/n8n-chinese # Uses 'docker pull lunare/n8n-chinese' to pull the image.
+                               # By default, it will pull the 'latest' tag. If you need a specific version, you can specify it, e.g., lunare/n8n-chinese:1.x.x
+    restart: always # Configures the container to always restart if it exits, ensuring continuous availability of the n8n service.
+    environment: # Environment variables for the n8n container.
+      # --- General Settings ---
+      - N8N_SECURE_COOKIE=false # Sets cookies to non-secure mode. Suitable for development environments or non-HTTPS deployments. For production, HTTPS is highly recommended, and this should be set to true.
+      - TZ=Asia/Shanghai # Sets the container's timezone to Asia/Shanghai, ensuring accurate logs and timestamps.
+      - N8N_RUNNERS_ENABLED=true # Enables n8n's external Runner feature for distributed workflow execution.
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true # Forces a check on configuration file permissions, enhancing system security.
+
+      # --- Proxy Configuration (Uncomment if needed, values read from .env file) ---
+      #- HTTP_PROXY=http://${PROXY_HTTP_HOST}:${PROXY_HTTP_PORT} # Configures the HTTP proxy address.
+      #- HTTPS_PROXY=http://${PROXY_HTTPS_HOST}:${PROXY_HTTPS_PORT} # Configures the HTTPS proxy address.
+      #- NO_PROXY=${NO_PROXY_LIST} # Specifies a list of hosts or domains that should not use the proxy.
+
+      # --- n8n Workflow Execution Data Pruning Settings ---
+      - EXECUTIONS_DATA_PRUNE=true # Enables automatic pruning of workflow execution data.
+      - EXECUTIONS_DATA_MAX_AGE=48 # Sets the maximum age for execution data retention to 48 hours (2 days).
+      - EXECUTIONS_DATA_MAX_COUNT=15 # Sets the maximum number of execution history records to keep per workflow to 15.
+
+    ports: # Container port mapping configuration.
+      - "5678:5678" # Maps host port 5678 to container port 5678, which is the default port for the n8n Web UI.
+    volumes: # Container storage volume mapping configuration.
+      - n8n:/home/node/.n8n # Mounts the Docker anonymous volume 'n8n' to n8n's data directory inside the container for core data persistence.
+      - ./input:/home/node/input # Mounts the host's 'input' directory to the container, allowing n8n workflows to access input files.
+      - ./output:/home/node/output # Mounts the host's 'output' directory to the container, allowing n8n workflows to output files.

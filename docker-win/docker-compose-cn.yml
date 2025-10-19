@@ -1,0 +1,34 @@
+volumes:
+  n8n: # Docker 匿名卷，用于持久化 n8n 的核心数据。
+       # 包括配置、工作流、凭据和 SQLite 数据库等，确保数据在容器重启后不丢失。
+
+services:
+  n8n:
+    image: lunare/n8n-chinese # 直接使用 lunare/n8n-chinese 镜像。
+    restart: always # 配置容器退出时总是重启，确保 n8n 服务持续可用。
+    environment: # n8n 容器的环境变量配置。
+      # --- 通用设置 ---
+      - N8N_DEFAULT_LOCALE=zh-CN # 设置 n8n 用户界面的默认语言为简体中文。
+      - N8N_SECURE_COOKIE=false # 将 Cookie 设置为非安全模式。适用于开发环境或非 HTTPS 部署，生产环境建议使用 HTTPS 并设为 true。
+      - TZ=Asia/Shanghai # 设置容器的时区为亚洲/上海，确保日志和时间戳准确。
+      - N8N_RUNNERS_ENABLED=true # 启用 n8n 的外部 Runner 功能，用于分布式执行工作流。
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true # 强制检查配置文件权限，增强系统安全性。
+
+      # --- 代理配置 (如果需要，请取消注释并从 .env 文件中获取值) ---
+      #- HTTP_PROXY=http://${PROXY_HTTP_HOST}:${PROXY_HTTP_PORT} # 配置 HTTP 代理地址。
+      #- HTTPS_PROXY=http://${PROXY_HTTPS_HOST}:${PROXY_HTTPS_PORT} # 配置 HTTPS 代理地址。
+      #- NO_PROXY=${NO_PROXY_LIST} # 指定不走代理的主机或域名列表。
+
+      # --- n8n 工作流执行数据清理设置 ---
+      - EXECUTIONS_DATA_PRUNE=true # 启用工作流执行数据的自动清理功能。
+      - EXECUTIONS_DATA_MAX_AGE=48 # 设置执行数据最多保留 48 小时（即 2 天）。
+      - EXECUTIONS_DATA_MAX_COUNT=15 # 设置每个工作流最多保留 15 条执行历史记录。
+
+    ports: # 容器端口映射配置。
+      - "5678:5678" # 将宿主机的 5678 端口映射到容器的 5678 端口，这是 n8n Web UI 的默认端口。
+    volumes: # 容器存储卷映射配置。
+      - n8n:/home/node/.n8n # 将 Docker 匿名卷 n8n 挂载到容器内 n8n 的数据目录，用于持久化核心数据。
+      # 注意：lunare/n8n-chinese 镜像通常已预置中文 UI，此挂载可能不再必要或路径不匹配。
+      # 如果您需要自定义 UI，请确认该镜像的内部路径或移除此行。
+      - ./input:/home/node/input # 挂载宿主机的 input 目录到容器，供 n8n 工作流访问输入文件。
+      - ./output:/home/node/output # 挂载宿主机的 output 目录到容器，供 n8n 工作流输出文件。

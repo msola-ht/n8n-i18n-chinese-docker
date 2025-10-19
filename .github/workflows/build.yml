@@ -121,3 +121,36 @@ jobs:
           ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
         cache-from: type=gha # 启用GitHub Actions缓存
         cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
+
+    - name: Update README with new version # 步骤12: 更新README中的版本标签
+      run: |
+        NEW_VERSION="${{ steps.get_n8n_version.outputs.n8n_version }}"
+        echo "Updating README.md with version: $NEW_VERSION"
+
+        # 更新 README.md 中的版本标签
+        sed -i "s|lunare/n8n-chinese:[0-9]\+\.[0-9]\+\.[0-9]\+|lunare/n8n-chinese:$NEW_VERSION|g" README.md
+
+        # 显示更新内容
+        echo "Updated README.md content:"
+        grep -n "lunare/n8n-chinese:" README.md || true
+
+        # 配置 Git 用户信息
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+
+        # 提交更新
+        git add README.md
+        if git diff --staged --quiet; then
+          echo "No changes to README.md"
+        else
+          git commit -m "🤖 自动更新 README 版本标签至 $NEW_VERSION
+
+- 更新所有 lunare/n8n-chinese 版本标签引用
+- 版本号: $NEW_VERSION
+- 自动构建流程更新
+
+🤖 Generated with GitHub Actions
+
+Co-Authored-By: GitHub Action <action@github.com>"
+          git push
+        fi

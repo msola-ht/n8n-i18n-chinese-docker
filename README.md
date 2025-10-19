@@ -24,7 +24,7 @@
 
 - **仓库名称**: `lunare/n8n-chinese`
 - **标签策略**:
-  - `lunare/n8n-chinese:1.94.1` - 对应具体 n8n 版本（示例版本号，实际版本请查看 Docker Hub）
+  - `lunare/n8n-chinese:1.94.1` - 对应具体 n8n 版本（自动同步至最新构建版本）
   - `lunare/n8n-chinese:latest` - 最新版本
 
 ### 快速使用
@@ -33,7 +33,7 @@
 # 拉取最新镜像
 docker pull lunare/n8n-chinese:latest
 
-# 拉取指定版本（请查看 Docker Hub 获取实际可用版本）
+# 拉取指定版本（版本号与 README 中的示例保持同步）
 docker pull lunare/n8n-chinese:1.94.1
 
 # 运行容器（基础版本）
