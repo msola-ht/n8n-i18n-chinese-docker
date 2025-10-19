@@ -55,6 +55,20 @@ jobs:
         N8N_VERSION="${TAG#n8n@}"  # 去掉前缀
         cat <<EOF > Dockerfile
         FROM n8nio/n8n:$N8N_VERSION
+
+        # 安装额外的系统依赖
+        # ffmpeg 用于视频处理，字体相关库 (fontconfig, freetype, harfbuzz, fribidi) 用于文本渲染，
+        # tini 用于更好的容器启动管理（如果基础镜像未包含）
+        RUN apt-get update \\
+            && apt-get install -y --no-install-recommends \\
+            ffmpeg \\
+            fontconfig \\
+            libfreetype6 \\
+            libharfbuzz0b \\
+            libfribidi0 \\
+            tini \\
+            && rm -rf /var/lib/apt/lists/*
+
         COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
         EOF
 
