@@ -1,58 +1,70 @@
-name: Build n8n chinese editor-ui docker image
+name: Build n8n Chinese Editor-UI Docker Image # 工作流名称，稍微修改更清晰
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: # 手动触发工作流
   schedule:
-    - cron: '0 * * * *'  # 每小时检查一次
-  # 可选，未来支持 repository_dispatch 事件自动触发
+    - cron: '0 * * * *'  # 每小时检查一次上游是否有新版本
+  # 注意：由于我们会在工作流结束时创建tag，所以不再需要 push.tags 触发器来检测自身仓库的tag
+  # 如果您希望在自身仓库有新tag时也触发，可以保留，但可能会与schedule触发器逻辑冲突
 
 env:
-  UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
+  UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese # 上游仓库，用于获取最新发布
 
 jobs:
   build-and-push:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # 运行环境
 
     steps:
-    - name: 获取上游最新 Release
+    - name: Checkout repository # 步骤1: 拉取当前仓库代码
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0 # 获取所有历史，包括标签，以便检查
+
+    - name: 获取上游最新 Release # 步骤2: 从上游仓库获取最新发布信息
       id: get_release
       run: |
         latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
-        tag=$(echo "$latest_release" | jq -r .tag_name)
-        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url')
-        echo "tag=$tag" >> $GITHUB_OUTPUT
-        echo "asset_url=$asset_url" >> $GITHUB_OUTPUT
+        tag=$(echo "$latest_release" | jq -r .tag_name) # 获取上游的 Git Tag，例如 n8n@1.115.3
+        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url') # 获取下载链接
+        echo "tag=$tag" >> "$GITHUB_OUTPUT" # 将tag设置为输出
+        echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT" # 将下载链接设置为输出
+        echo "Detected upstream tag: $tag"
 
-    - name: 检查是否已发布过
-      id: check_tag
+    - name: 检查当前仓库是否已发布过此版本 # 步骤3: 检查当前仓库是否已存在相同的 Git Tag
+      id: check_local_tag
       run: |
-        tag=${{ steps.get_release.outputs.tag }}
-        if git ls-remote --tags origin | grep "refs/tags/$tag$"; then
-          echo "Tag $tag 已存在，跳过"
-          echo "exists=true" >> $GITHUB_OUTPUT
+        tag_to_check=${{ steps.get_release.outputs.tag }}
+        # 使用 git tag -l 检查本地仓库的tag，并判断是否存在
+        if git tag -l | grep -q "^$tag_to_check$"; then
+          echo "Tag $tag_to_check 已存在于当前仓库，跳过构建和推送。"
+          echo "exists=true" >> "$GITHUB_OUTPUT"
         else
-          echo "exists=false" >> $GITHUB_OUTPUT
+          echo "Tag $tag_to_check 不存在于当前仓库，继续构建和推送。"
+          echo "exists=false" >> "$GITHUB_OUTPUT"
         fi
 
-    - name: 退出如果已发布
-      if: steps.check_tag.outputs.exists == 'true'
+    - name: 退出如果已发布 # 步骤4: 如果本地已存在此版本标签，则终止工作流
+      if: steps.check_local_tag.outputs.exists == 'true'
       run: |
-        echo "Release 已存在，终止 workflow."
+        echo "Release 已存在于当前仓库，终止 workflow."
         exit 0
 
-    - name: 下载上游 release 文件
+    - name: 下载上游 release 文件 # 步骤5: 下载上游的 editor-ui dist 文件
       run: |
-        mkdir src-dist
+        mkdir -p src-dist # 确保目录存在
         curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
+        echo "Downloaded ${{ steps.get_release.outputs.asset_url }}"
 
-    - name: 解压 dist
+    - name: 解压 dist 文件 # 步骤6: 解压下载的 tar.gz 文件
       run: |
         tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
+        echo "Extracted dist files to src-dist/dist"
 
-    - name: 生成 Dockerfile
+    - name: 生成 Dockerfile # 步骤7: 动态生成 Dockerfile
       run: |
         TAG=${{ steps.get_release.outputs.tag }}
-        N8N_VERSION="${TAG#n8n@}"  # 去掉前缀
+        N8N_VERSION="${TAG#n8n@}"  # 从上游tag中提取n8n版本号
+        echo "Generating Dockerfile for n8n version: $N8N_VERSION"
         cat <<EOF > Dockerfile
         FROM n8nio/n8n:$N8N_VERSION
 
@@ -66,25 +78,41 @@ jobs:
 
         USER node
 
+        # 复制解压后的文件到 n8n editor-ui 的 dist 目录
         COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
         EOF
+        cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
 
-    - name: 构建镜像
-      run: |
-        TAG=${{ steps.get_release.outputs.tag }}
-        N8N_VERSION="${TAG#n8n@}"
-        IMAGE_NAME=lunare/n8n-chinese:$N8N_VERSION
-        docker build -t $IMAGE_NAME .
+    - name: Set up Docker Buildx # 步骤8: 设置Docker Buildx，用于更高效和安全的构建
+      uses: docker/setup-buildx-action@v3
 
-    - name: 登录 DockerHub
+    - name: Log in to Docker Hub # 步骤9: 登录到Docker Hub
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: 推送镜像
+    - name: Build and push Docker image # 步骤10: 构建并推送Docker镜像 (同时打上版本号和latest标签)
+      uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
+      with:
+        context: . # Dockerfile 所在的上下文路径
+        push: true # 启用推送
+        tags: | # 定义要推送的标签，可以同时定义多个
+          lunare/n8n-chinese:${{ steps.get_release.outputs.tag }} # 完整的上游tag作为版本号，例如 lunare/n8n-chinese:n8n@1.115.3
+          lunare/n8n-chinese:${{ steps.get_release.outputs.n8n_version }} # 仅版本号，例如 lunare/n8n-chinese:1.115.3 (可选，看您喜欢哪种标签格式)
+          lunare/n8n-chinese:latest # 'latest' 标签
+        cache-from: type=gha # 启用GitHub Actions缓存
+        cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
+
+    - name: Create Git Tag # 步骤11: 在当前仓库创建与上游Release相同的Git Tag
+      env:
+        GH_TOKEN: ${{ github.token }} # GitHub Actions 默认的 GITHUB_TOKEN 具有创建标签的权限
       run: |
-        TAG=${{ steps.get_release.outputs.tag }}
-        N8N_VERSION="${TAG#n8n@}"
-        IMAGE_NAME=lunare/n8n-chinese:$N8N_VERSION
-        docker push $IMAGE_NAME
+        TAG_NAME=${{ steps.get_release.outputs.tag }} # 使用上游的完整tag名
+        echo "Creating Git tag: $TAG_NAME"
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag "$TAG_NAME"
+        git push origin "$TAG_NAME"
+        echo "Successfully created and pushed Git tag $TAG_NAME."
+
