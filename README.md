@@ -14,7 +14,8 @@
 - 🐳 **优化构建**: 多阶段 Docker 构建，镜像体积更小
 - 🇨🇳 **完整中文**: 集成完整中文语言包，支持中文界面
 - 🎬 **FFmpeg 支持**: 预装 FFmpeg，支持视频、音频处理工作流
-- 🚀 **生产就绪**: 包含完整的 PostgreSQL 集成配置
+- 🗄️ **轻量级存储**: 使用 SQLite 数据库，无需额外数据库配置
+- 🚀 **开箱即用**: Windows 一键启动，零配置部署
 - 📦 **多版本支持**: 同时发布版本标签和 latest 标签
 
 ## 📦 Docker 镜像
@@ -23,7 +24,7 @@
 
 - **仓库名称**: `lunare/n8n-chinese`
 - **标签策略**:
-  - `lunare/n8n-chinese:1.94.1` - 对应具体 n8n 版本
+  - `lunare/n8n-chinese:1.94.1` - 对应具体 n8n 版本（示例版本号，实际版本请查看 Docker Hub）
   - `lunare/n8n-chinese:latest` - 最新版本
 
 ### 快速使用
@@ -32,7 +33,7 @@
 # 拉取最新镜像
 docker pull lunare/n8n-chinese:latest
 
-# 拉取指定版本
+# 拉取指定版本（请查看 Docker Hub 获取实际可用版本）
 docker pull lunare/n8n-chinese:1.94.1
 
 # 运行容器（基础版本）
@@ -48,71 +49,203 @@ docker run -d \
 
 ## 🚀 生产环境部署
 
-### 使用 Docker Compose（推荐）
+### Windows 环境（推荐）
+
+本项目为 Windows 用户提供了简化的部署方案，包含一键启动脚本和双语言配置：
+
+#### 🖥️ Windows 快速部署
 
 ```bash
 # 克隆项目
 git clone https://github.com/msola-ht/n8n-i18n-chinese-docker.git
-cd n8n-i18n-chinese-docker/docker
+cd n8n-i18n-chinese-docker/docker-win
 
-# 修改配置文件
-nano docker-compose.yml
+# 使用中文脚本启动（推荐中文用户）
+Start-ZH.bat
 
-# 启动服务
-docker-compose up -d
+# 或使用英文脚本启动
+Start-EN.bat
 
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f n8n
+# 停止服务
+Stop.bat
 ```
 
-### 必需的环境变量
+#### 📁 Windows 目录结构
+
+```
+docker-win/
+├── docker-compose-cn.yml     # 中文环境配置（自动设置中文界面）
+├── docker-compose-en.yml     # 英文环境配置
+├── Start-ZH.bat              # 中文启动脚本
+├── Start-EN.bat              # 英文启动脚本
+├── Stop.bat                  # 停止服务脚本
+├── .env                      # 环境变量配置文件（需要创建）
+├── input/                    # 输入文件目录
+└── output/                   # 输出文件目录
+```
+
+#### 🎯 Windows 启动脚本功能
+
+**Start-ZH.bat / Start-EN.bat**：
+- ✅ 自动检查 Docker Desktop 状态
+- ✅ 检查 .env 配置文件
+- ✅ 提供两种启动选项：
+  1. 直接启动服务（快速）
+  2. 更新镜像后启动（推荐定期更新）
+- ✅ 自动拉取最新镜像
+- ✅ 启动 n8n 服务
+- ✅ 详细的错误提示和状态检查
+
+**Stop.bat**：
+- ✅ 停止并清理 n8n 服务
+- ✅ 支持多配置文件清理
+
+### Linux/Mac 环境
+
+```bash
+# 克隆项目
+git clone https://github.com/msola-ht/n8n-i18n-chinese-docker.git
+cd n8n-i18n-chinese-docker/docker-win
+
+# 创建 .env 文件（可选）
+cp .env.example .env
+
+# 启动服务（中文版本）
+docker-compose -f docker-compose-cn.yml up -d
+
+# 或启动英文版本
+docker-compose -f docker-compose-en.yml up -d
+
+# 查看服务状态
+docker-compose -f docker-compose-cn.yml ps
+
+# 查看日志
+docker-compose -f docker-compose-cn.yml logs -f n8n
+
+# 停止服务
+docker-compose -f docker-compose-cn.yml down
+```
+
+### 环境变量配置
+
+#### 基础配置（docker-compose-cn.yml 已预设）
 
 ```yaml
 environment:
-  # 中文界面配置
+  # 中文界面配置（中文版本自动设置）
   - N8N_DEFAULT_LOCALE=zh-CN          # 设置默认语言为中文
-  - GENERIC_TIMEZONE=Asia/Shanghai     # 设置时区为上海
+  - TZ=Asia/Shanghai                  # 设置时区为上海
 
-  # 数据库配置（生产环境强烈推荐使用 PostgreSQL）
-  - DB_TYPE=postgresdb
-  - DB_POSTGRESDB_HOST=postgres
-  - DB_POSTGRESDB_DATABASE=n8n
-  - DB_POSTGRESDB_USER=n8n
-  - DB_POSTGRESDB_PASSWORD=<secure_password>
+  # 基础功能配置
+  - N8N_SECURE_COOKIE=false           # 开发环境设置，生产环境建议为 true
+  - N8N_RUNNERS_ENABLED=true          # 启用外部 Runner 功能
+  - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true  # 增强安全性
 
-  # 安全配置
-  - N8N_BASIC_AUTH_ACTIVE=true         # 启用基础认证
-  - N8N_BASIC_AUTH_USER=<username>     # 认证用户名
-  - N8N_BASIC_AUTH_PASSWORD=<secure_password>  # 认证密码
-  - N8N_ENCRYPTION_KEY=<32_char_hex_key>       # 加密密钥
-
-  # 生产环境配置
-  - NODE_ENV=production
-  - N8N_HOST=yourdomain.com            # 您的域名
-  - WEBHOOK_URL=https://yourdomain.com
-  - N8N_CONCURRENCY_PRODUCTION_LIMIT=5
-  - N8N_LOG_LEVEL=info
+  # 工作流执行数据清理
+  - EXECUTIONS_DATA_PRUNE=true        # 启用自动清理
+  - EXECUTIONS_DATA_MAX_AGE=48        # 数据保留 48 小时
+  - EXECUTIONS_DATA_MAX_COUNT=15      # 每个工作流保留 15 条记录
 ```
+
+#### 代理配置（可选）
+
+如果您的网络环境需要代理，请进行以下配置：
+
+**步骤 1：创建 .env 文件**
+
+```bash
+# 在 docker-win 目录下创建 .env 文件
+touch .env
+```
+
+**步骤 2：配置代理参数**
+
+```env
+# 代理服务器配置
+PROXY_HTTP_HOST=proxy.example.com
+PROXY_HTTP_PORT=8080
+PROXY_HTTPS_HOST=proxy.example.com
+PROXY_HTTPS_PORT=8080
+NO_PROXY_LIST=localhost,127.0.0.1
+```
+
+**步骤 3：启用代理配置**
+
+在 `docker-compose-cn.yml` 文件中，找到以下被注释的代理配置行：
+
+```yaml
+# --- 代理配置 (如果需要，请取消注释并从 .env 文件中获取值) ---
+#- HTTP_PROXY=http://${PROXY_HTTP_HOST}:${PROXY_HTTP_PORT} # 配置 HTTP 代理地址。
+#- HTTPS_PROXY=http://${PROXY_HTTPS_HOST}:${PROXY_HTTPS_PORT} # 配置 HTTPS 代理地址。
+#- NO_PROXY=${NO_PROXY_LIST} # 指定不走代理的主机或域名列表。
+```
+
+**取消注释**（删除行首的 `#`）：
+
+```yaml
+# --- 代理配置 (如果需要，请取消注释并从 .env 文件中获取值) ---
+- HTTP_PROXY=http://${PROXY_HTTP_HOST}:${PROXY_HTTP_PORT} # 配置 HTTP 代理地址。
+- HTTPS_PROXY=http://${PROXY_HTTPS_HOST}:${PROXY_HTTPS_PORT} # 配置 HTTPS 代理地址。
+- NO_PROXY=${NO_PROXY_LIST} # 指定不走代理的主机或域名列表。
+```
+
+> ⚠️ **注意**：修改配置后需要重新启动服务才能生效。
 
 ## 🔧 开发环境
 
-### 本地开发
+### Windows 开发环境
 
 ```bash
-# 进入 Docker 配置目录
-cd docker
+# 进入 Windows 配置目录
+cd docker-win
 
-# 启动开发环境
-docker-compose up -d
+# 使用脚本快速启动
+Start-ZH.bat
+
+# 或手动启动（中文版本）
+docker-compose -f docker-compose-cn.yml up -d
+
+# 查看实时日志
+docker-compose -f docker-compose-cn.yml logs -f n8n
 
 # 停止服务
-docker-compose down
+docker-compose -f docker-compose-cn.yml down
 
 # 重新构建并启动
-docker-compose up -d --build
+docker-compose -f docker-compose-cn.yml up -d --force-recreate
+```
+
+### Linux/Mac 开发环境
+
+```bash
+# 进入配置目录
+cd docker-win
+
+# 启动开发环境（中文版本）
+docker-compose -f docker-compose-cn.yml up -d
+
+# 查看实时日志
+docker-compose -f docker-compose-cn.yml logs -f n8n
+
+# 停止服务
+docker-compose -f docker-compose-cn.yml down
+
+# 重新构建并启动
+docker-compose -f docker-compose-cn.yml up -d --force-recreate
+```
+
+### 文件目录操作
+
+Windows 版本预设了文件输入输出目录：
+
+```bash
+# 访问挂载的目录
+docker-win/input/     # 供 n8n 工作流读取的文件目录
+docker-win/output/    # n8n 工作流输出文件的目录
+
+# 在 n8n 中访问路径
+/home/node/input/     # 容器内输入文件路径
+/home/node/output/    # 容器内输出文件路径
 ```
 
 ### 手动触发构建
@@ -126,12 +259,37 @@ n8n-i18n-chinese-docker/
 ├── .github/
 │   └── workflows/
 │       └── build.yml              # GitHub Actions CI/CD 工作流
-├── docker/
-│   └── docker-compose.yml         # 生产环境 Docker Compose 配置
+├── docker-win/                    # Windows 优化配置目录
+│   ├── docker-compose-cn.yml      # 中文环境配置（自动设置中文界面）
+│   ├── docker-compose-en.yml      # 英文环境配置
+│   ├── Start-ZH.bat               # 中文启动脚本
+│   ├── Start-EN.bat               # 英文启动脚本
+│   ├── Stop.bat                   # 停止服务脚本
+│   ├── input/                     # 输入文件目录（需手动创建）
+│   └── output/                    # 输出文件目录（需手动创建）
 ├── CLAUDE.md                      # AI 助手项目指南
 ├── README.md                      # 本文件
 └── .gitignore                     # Git 忽略文件配置
 ```
+
+## 🆚 Windows 版本特点
+
+### ✅ Windows 专属功能
+- **一键启动脚本**: 双击即可启动 n8n 服务
+- **双语言支持**: 中文/英文启动脚本和配置
+- **Docker Desktop 集成**: 自动检测和集成 Docker Desktop
+- **文件目录预设**: 预配置 input/output 目录用于文件操作
+- **错误友好提示**: 详细的 Windows 环境错误提示和解决方案
+
+### 🎯 使用场景对比
+
+| 功能 | 原版本 | Windows 版本 |
+|------|--------|-------------|
+| 启动方式 | 手动命令 | 一键脚本 |
+| 语言支持 | 需手动配置 | 预设中文/英文 |
+| 文件操作 | 需手动配置卷 | 预设 input/output 目录 |
+| 错误处理 | 基础提示 | 详细 Windows 错误诊断 |
+| 适合用户 | 开发者 | 所有用户（包括非技术用户） |
 
 ## 🔄 自动化流程
 
@@ -194,7 +352,7 @@ n8n-i18n-chinese-docker/
 - **自动同步**: 完整保留上游自动同步机制
 - **中文语言**: 完整的中文界面支持
 - **多阶段构建**: 优化的 Docker 构建流程
-- **生产就绪**: PostgreSQL 集成和安全配置
+- **轻量级部署**: SQLite 数据库，开箱即用
 
 ### 📋 使用场景
 新增的 FFmpeg 支持使您可以在 n8n 工作流中：
