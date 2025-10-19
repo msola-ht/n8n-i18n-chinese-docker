@@ -140,7 +140,7 @@ jobs:
         context: . # Dockerfile 所在的上下文路径
         push: true # 启用推送
         # 定义要推送的标签，每行一个
-        标签: |
+        tags: |
           ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}
           ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
         cache-from: type=gha # 启用GitHub Actions缓存
