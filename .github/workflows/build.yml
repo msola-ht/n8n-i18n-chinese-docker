@@ -59,15 +59,16 @@ jobs:
         # 安装额外的系统依赖
         # ffmpeg 用于视频处理，字体相关库 (fontconfig, freetype, harfbuzz, fribidi) 用于文本渲染，
         # tini 用于更好的容器启动管理（如果基础镜像未包含）
-        RUN apt-get update \\
-            && apt-get install -y --no-install-recommends \\
+        # 注意：n8n 基础镜像通常基于 Alpine Linux，所以使用 apk 包管理器
+        RUN apk update \\
+            && apk add --no-cache \\
             ffmpeg \\
             fontconfig \\
-            libfreetype6 \\
-            libharfbuzz0b \\
-            libfribidi0 \\
+            freetype \\
+            harfbuzz \\
+            fribidi \\
             tini \\
-            && rm -rf /var/lib/apt/lists/*
+            && rm -rf /var/cache/apk/*
 
         COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
         EOF
