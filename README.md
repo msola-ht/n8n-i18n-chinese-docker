@@ -24,7 +24,7 @@
 
 - **仓库名称**: `lunare/n8n-chinese`
 - **标签策略**:
-  - `lunare/n8n-chinese:1.117.3` - 对应具体 n8n 版本（自动同步至最新构建版本）
+  - `lunare/n8n-chinese:1.118.2` - 对应具体 n8n 版本（自动同步至最新构建版本）
   - `lunare/n8n-chinese:latest` - 最新版本
 
 ### 快速使用
@@ -34,7 +34,7 @@
 docker pull lunare/n8n-chinese:latest
 
 # 拉取指定版本（版本号与 README 中的示例保持同步）
-docker pull lunare/n8n-chinese:1.117.3
+docker pull lunare/n8n-chinese:1.118.2
 
 # 运行容器（基础版本）
 docker run -d -p 5678:5678 lunare/n8n-chinese:latest
