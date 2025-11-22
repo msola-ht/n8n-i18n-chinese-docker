@@ -137,19 +137,30 @@ jobs:
       - name: 设置 Docker Hub 用户名
         run: echo "DOCKERHUB_USERNAME=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | xargs)" >> "$GITHUB_ENV"
 
-      - name: 生成企业版 Dockerfile
+      - name: 准备企业版文件
+        # 这里进行了拆分：先生成 JS 文件，再生成 Dockerfile，避免嵌套 Heredoc 错误
         run: |
+          # 1. 生成 Mock JS 文件
+          cat <<'JSEOF' > enterprise-mock.js
+          const originalInit = BaseCommand.prototype.init; const originalInitLicense = BaseCommand.prototype.initLicense; function initEnterpriseMock() { const { Container } = require("@n8n/di"); const { License } = require("../license"); const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants"); try { const license = Container.get(License); if (!license) { console.warn("[ENTERPRISE MOCK] License service not available"); return; } license.isLicensed = function(feature) { if (feature === "feat:showNonProdBanner") { return false; } return true; }; const origialGetValue = license.getValue.bind(license); license.getValue = (feature) => { if (feature === "planName") { return "Enterprise (Mocked)"; } if (Object.values(LICENSE_QUOTAS).includes(feature)) { return UNLIMITED_LICENSE_QUOTA; } if (Object.values(LICENSE_FEATURES).includes(feature)) { return true; } return origialGetValue(feature); }; ["isAdvancedPermissionsLicensed", "isSharingEnabled", "isLdapEnabled", "isSamlEnabled", "isSourceControlLicensed", "isVariablesEnabled", "isExternalSecretsEnabled", "isWorkflowHistoryLicensed", "isLogStreamingEnabled", "isMultiMainLicensed", "isBinaryDataS3Licensed", "isDebugInEditorLicensed", "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled", "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed", "isCustomNpmRegistryEnabled", "isWithinUsersLimit"].forEach((key) => { license[key] = () => true; }); ["getUsersLimit", "getTriggerLimit", "getVariablesLimit", "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; }); license.isAPIDisabled = () => false; license.isAiAssistantEnabled = () => false; license.getAiCredits = () => 999999; license.getPlanName = () => "Enterprise (Mocked)"; license.getConsumerId = () => "enterprise-mock-consumer"; license.getManagementJwt = () => "mock-jwt-token"; console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled"); } catch (error) { console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error); } } BaseCommand.prototype.init = async function() { await originalInit.call(this); await this.initLicense(); }; BaseCommand.prototype.initLicense = async function() { await originalInitLicense.call(this); initEnterpriseMock(); };
+          JSEOF
+
+          # 2. 生成 Dockerfile (使用 COPY 指令而不是内部生成)
           cat <<EOF > Dockerfile.enterprise
           FROM ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
           USER root
+          
+          # 将上面生成的 JS 文件复制到镜像中
+          COPY enterprise-mock.js /tmp/enterprise-mock.js
+          
           ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
+          
+          # 执行注入逻辑
           RUN set -e; \
-              cat > /tmp/enterprise-mock.js <<'EOT';
-          const originalInit = BaseCommand.prototype.init; const originalInitLicense = BaseCommand.prototype.initLicense; function initEnterpriseMock() { const { Container } = require("@n8n/di"); const { License } = require("../license"); const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants"); try { const license = Container.get(License); if (!license) { console.warn("[ENTERPRISE MOCK] License service not available"); return; } license.isLicensed = function(feature) { if (feature === "feat:showNonProdBanner") { return false; } return true; }; const origialGetValue = license.getValue.bind(license); license.getValue = (feature) => { if (feature === "planName") { return "Enterprise (Mocked)"; } if (Object.values(LICENSE_QUOTAS).includes(feature)) { return UNLIMITED_LICENSE_QUOTA; } if (Object.values(LICENSE_FEATURES).includes(feature)) { return true; } return origialGetValue(feature); }; ["isAdvancedPermissionsLicensed", "isSharingEnabled", "isLdapEnabled", "isSamlEnabled", "isSourceControlLicensed", "isVariablesEnabled", "isExternalSecretsEnabled", "isWorkflowHistoryLicensed", "isLogStreamingEnabled", "isMultiMainLicensed", "isBinaryDataS3Licensed", "isDebugInEditorLicensed", "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled", "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed", "isCustomNpmRegistryEnabled", "isWithinUsersLimit"].forEach((key) => { license[key] = () => true; }); ["getUsersLimit", "getTriggerLimit", "getVariablesLimit", "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; }); license.isAPIDisabled = () => false; license.isAiAssistantEnabled = () => false; license.getAiCredits = () => 999999; license.getPlanName = () => "Enterprise (Mocked)"; license.getConsumerId = () => "enterprise-mock-consumer"; license.getManagementJwt = () => "mock-jwt-token"; console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled"); } catch (error) { console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error); } } BaseCommand.prototype.init = async function() { await originalInit.call(this); await this.initLicense(); }; BaseCommand.prototype.initLicense = async function() { await originalInitLicense.call(this); initEnterpriseMock(); };
-          EOT
               awk '/^exports\.BaseCommand = BaseCommand;$/{system("cat /tmp/enterprise-mock.js")}1' \${TARGET_FILE} > \${TARGET_FILE}.tmp; \
               mv \${TARGET_FILE}.tmp \${TARGET_FILE}; \
               rm /tmp/enterprise-mock.js;
+          
           USER node
           EOF
           
@@ -168,7 +179,6 @@ jobs:
           context: .
           file: ./Dockerfile.enterprise
           push: true
-          # 请确保这里是 tags，不是“标签”
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:latest
