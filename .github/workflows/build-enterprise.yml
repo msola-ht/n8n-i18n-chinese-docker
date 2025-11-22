@@ -1,4 +1,4 @@
-name: 构建 n8n 中文企业版 Docker 镜像
+name: 构建 n8n 中文社区版和企业版 Docker 镜像
 
 on:
   workflow_dispatch: # 允许手动触发
@@ -9,263 +9,314 @@ env:
   UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese # 上游仓库地址
 
 jobs:
-  build-and-push:
-    runs-on: ubuntu-latest # 在 Ubuntu 最新版系统上运行
-
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      exists: ${{ steps.check_tag.outputs.exists }}
+      tag: ${{ steps.get_release.outputs.tag }}
+      asset_url: ${{ steps.get_release.outputs.asset_url }}
+      n8n_version: ${{ steps.get_n8n_version.outputs.n8n_version }}
     steps:
-    - name: 拉取当前仓库代码 # 步骤1: 拉取当前仓库代码
-      uses: actions/checkout@v3
-      with:
-        fetch-depth: 0 # 获取所有历史，包括标签，以便检查
+      - name: 拉取当前仓库代码
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
-    - name: 获取上游最新发布信息 # 步骤2: 从上游仓库获取最新发布信息
-      id: get_release
-      run: |
-        latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
-        # 使用 xargs 确保去除所有前导和尾部空格
-        tag=$(echo "$latest_release" | jq -r .tag_name | xargs) # 获取上游的 Git Tag，例如 n8n@1.115.3
-        asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url' | xargs) # 获取下载链接
-        echo "tag=$tag" >> "$GITHUB_OUTPUT" # 将tag设置为输出
-        echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT" # 将下载链接设置为输出
-        echo "检测到上游标签: '$tag'" # 打印带引号的tag，方便调试空格
+      - name: 获取上游最新发布信息
+        id: get_release
+        run: |
+          latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
+          tag=$(echo "$latest_release" | jq -r .tag_name | xargs)
+          asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url' | xargs)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT"
+          echo "检测到上游标签: '$tag'"
 
-    - name: 检查此版本是否已发布 # 新增步骤：检查当前仓库是否已存在与上游最新 release 相同的 Git Tag
-      id: check_tag
-      run: |
-        UPSTREAM_TAG="${{ steps.get_release.outputs.tag }}"
-        ENTERPRISE_TAG="${UPSTREAM_TAG}-enterprise"
-        echo "正在检查当前仓库是否已存在企业版 Git Tag: '$ENTERPRISE_TAG'"
-        # 使用 git ls-remote 检查远程仓库（origin）中是否存在该标签
-        # grep -q 用于静默输出，只返回退出状态码
-        if git ls-remote --tags origin | grep -q "refs/tags/$ENTERPRISE_TAG$"; then
-          echo "检测到企业版标签 '$ENTERPRISE_TAG' 已存在于当前仓库，此版本已发布过。"
-          echo "exists=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "企业版标签 '$ENTERPRISE_TAG' 不存在于当前仓库，将继续构建新版本。"
-          echo "exists=false" >> "$GITHUB_OUTPUT"
-        fi
+      - name: 检查此版本是否已发布
+        id: check_tag
+        run: |
+          UPSTREAM_TAG="${{ steps.get_release.outputs.tag }}"
+          echo "正在检查当前仓库是否已存在 Git Tag: '$UPSTREAM_TAG'"
+          if git ls-remote --tags origin | grep -q "refs/tags/$UPSTREAM_TAG$"; then
+            echo "检测到标签 '$UPSTREAM_TAG' 已存在于当前仓库，此版本已发布过。"
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "标签 '$UPSTREAM_TAG' 不存在于当前仓库，将继续构建新版本。"
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
-    - name: 提示：此版本已发布，将跳过后续构建步骤 # 修改此步骤名称，使其更明确
-      if: steps.check_tag.outputs.exists == 'true' # 只有当已发布时才执行此提示
-      run: |
-        echo "检测到上游最新版本已在当前仓库发布过，无需重复构建和推送。后续构建步骤将被跳过。"
-        # 注意：此处不再使用 exit 0 来终止整个 Job，而是通过后续步骤的 if 条件来控制跳过。
+      - name: 提示：此版本已发布，将跳过后续构建步骤
+        if: steps.check_tag.outputs.exists == 'true'
+        run: echo "检测到上游最新版本已在当前仓库发布过，无需重复构建和推送。后续构建步骤将被跳过。"
 
-    # 以下所有步骤都添加了 if 条件，只有在版本未发布时才执行
-    - name: 从标签中提取 n8n 版本号 # 步骤3: 从上游Git标签中提取纯粹的n8n版本号
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      id: get_n8n_version
-      run: |
-        TAG_REF="${{ steps.get_release.outputs.tag }}"
-        # 提取后再次使用 xargs 确保去除所有前导和尾部空格
-        N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs) # 提取出 '1.115.3'
-        echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT" # 将版本号设置为输出
-        echo "提取到的 n8n 版本号: '$N8N_VERSION'" # 打印带引号的版本号，方便调试空格
+      - name: 从标签中提取 n8n 版本号
+        if: steps.check_tag.outputs.exists == 'false'
+        id: get_n8n_version
+        run: |
+          TAG_REF="${{ steps.get_release.outputs.tag }}"
+          N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
+          echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT"
+          echo "提取到的 n8n 版本号: '$N8N_VERSION'"
 
-    - name: 调试 Docker Hub 用户名 # 步骤4: 检查 DOCKERHUB_USERNAME 是否有空格，并清理
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      run: |
-        DOCKERHUB_USERNAME_VAL="${{ secrets.DOCKERHUB_USERNAME }}"
-        echo "--- 调试 Docker Hub 用户名 ---"
-        echo "用户名 (带引号): '$DOCKERHUB_USERNAME_VAL'"
-        echo "用户名长度: ${#DOCKERHUB_USERNAME_VAL}"
-        echo "------------------------------------"
-        # 增加一个防御性处理，确保 DOCKERHUB_USERNAME 不包含空格，并输出到环境变量
-        CLEAN_DOCKERHUB_USERNAME=$(echo "$DOCKERHUB_USERNAME_VAL" | xargs)
-        echo "清理后的用户名 (带引号): '$CLEAN_DOCKERHUB_USERNAME'"
-        echo "清理后的用户名长度: ${#CLEAN_DOCKERHUB_USERNAME}"
-        echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV" # 将清理后的用户名设置为环境变量，供后续步骤使用
+  build-and-push-community:
+    needs: check
+    if: needs.check.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取当前仓库代码
+        uses: actions/checkout@v3
 
-    - name: 生成企业版 Dockerfile # 步骤5: 基于现有中文版镜像生成企业版 Dockerfile
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      run: |
-        N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
-        echo "正在为 n8n 企业版版本: $N8N_VERSION 生成多阶段 Dockerfile"
+      - name: 清理并设置 Docker Hub 用户名
+        run: |
+          CLEAN_DOCKERHUB_USERNAME=$(echo "${{ secrets.DOCKERHUB_USERNAME }}" | xargs)
+          echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV"
 
-        # 创建企业版 Dockerfile（基于 lunare/n8n-chinese 镜像）
-        cat > Dockerfile << 'DOCKERFILE_EOF'
-        # 基于现有的中文版镜像构建企业版
-        FROM lunare/n8n-chinese:DOCKERFILE_VERSION_PLACEHOLDER
+      - name: 下载并解压上游发布文件
+        run: |
+          mkdir -p src-dist
+          curl -L "${{ needs.check.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
+          tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
 
-        # 切换到 root 用户以修改系统文件
-        USER root
+      - name: 生成社区版 Dockerfile
+        run: |
+          N8N_VERSION=${{ needs.check.outputs.n8n_version }}
+          echo "正在为社区版 n8n v$N8N_VERSION 生成 Dockerfile"
+          cat <<'EOF' > Dockerfile
+          # --- 阶段 1: ui_holder ---
+          FROM alpine:latest as ui_holder
+          WORKDIR /app
+          COPY src-dist/dist /app/dist
 
-        # 设置目标文件路径
-        ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
+          # --- 阶段 2: Final n8n Image ---
+          FROM n8nio/n8n:${N8N_VERSION}
+          USER root
 
-        # 注入企业版功能
-        RUN <<EOF
-            cat > /tmp/enterprise-mock.js <<EOT
+          RUN apk update \
+              && apk add --no-cache ffmpeg \
+              && rm -rf /var/cache/apk/*
+
+          USER node
+
+          COPY --from=ui_holder /app/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
+          EOF
+          # 将变量替换到 FROM 指令中
+          sed -i "s/\${N8N_VERSION}/$N8N_VERSION/g" Dockerfile
+          echo "--- Dockerfile 内容 ---"
+          cat Dockerfile
+          echo "-----------------------"
+
+      - name: 登录到 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送社区版 Docker 镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 更新 README (社区版) 并推送 Git 标签
+        run: |
+          NEW_VERSION="${{ needs.check.outputs.n8n_version }}"
+          DOCKER_USER="${{ env.DOCKERHUB_USERNAME }}"
+          IMAGE_NAME="n8n-chinese"
+          
+          sed -i "s|${DOCKER_USER}/${IMAGE_NAME}:[0-9]\+\.[0-9]\+\.[0-9]\+|${DOCKER_USER}/${IMAGE_NAME}:${NEW_VERSION}|g" README.md
+          
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          git add README.md
+          if git diff --staged --quiet; then
+            echo "README.md 没有变化。"
+          else
+            git commit -m "ci: 更新社区版 README 版本至 ${NEW_VERSION}"
+            git push
+          fi
+          
+          # 只有在主构建任务成功后才推送标签，避免重复
+          git tag "${{ needs.check.outputs.tag }}"
+          git push origin "${{ needs.check.outputs.tag }}"
+
+  build-and-push-enterprise:
+    needs: check
+    if: needs.check.outputs.exists == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取当前仓库代码
+        uses: actions/checkout@v3
+
+      - name: 清理并设置 Docker Hub 用户名
+        run: |
+          CLEAN_DOCKERHUB_USERNAME=$(echo "${{ secrets.DOCKERHUB_USERNAME }}" | xargs)
+          echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV"
+
+      - name: 下载并解压上游发布文件
+        run: |
+          mkdir -p src-dist
+          curl -L "${{ needs.check.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
+          tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
+
+      - name: 生成企业版 Dockerfile
+        run: |
+          N8N_VERSION=${{ needs.check.outputs.n8n_version }}
+          echo "正在为企业版 n8n v$N8N_VERSION 生成 Dockerfile"
+          cat <<'EOF' > Dockerfile
+          # --- 阶段 1: ui_holder ---
+          FROM alpine:latest as ui_holder
+          WORKDIR /app
+          COPY src-dist/dist /app/dist
+
+          # --- 阶段 2: Final n8n Image ---
+          FROM n8nio/n8n:${N8N_VERSION}
+          USER root
+
+          RUN apk update \
+              && apk add --no-cache ffmpeg \
+              && rm -rf /var/cache/apk/*
+
+          # --- 启用企业版功能 ---
+          ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
+          RUN <<EORUN
+              cat > /tmp/enterprise-mock.js <<'EOT'
           const originalInit = BaseCommand.prototype.init;
-            const originalInitLicense = BaseCommand.prototype.initLicense;
+          const originalInitLicense = BaseCommand.prototype.initLicense;
 
-            function initEnterpriseMock() {
-                const { Container } = require("@n8n/di");
-                const { License } = require("../license");
-                const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants");
+          function initEnterpriseMock() {
+              const { Container } = require("@n8n/di");
+              const { License } = require("../license");
+              const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants");    try {
+                  const license = Container.get(License);
+                  if (!license) {
+                      console.warn("[ENTERPRISE MOCK] License service not available");
+                      return;
+                  }
 
-                try {
-                    const license = Container.get(License);
-                    if (!license) {
-                        console.warn("[ENTERPRISE MOCK] License service not available");
-                        return;
-                    }
+                  const originalIsLicensed = license.isLicensed.bind(license);
+                  const origialGetValue = license.getValue.bind(license);
 
-                    const originalIsLicensed = license.isLicensed.bind(license);
-                    const origialGetValue = license.getValue.bind(license);
+                  license.isLicensed = function(feature) {
+                      if (feature === "feat:showNonProdBanner") {
+                          return false;
+                      }
+                      return true;
+                  };
 
-                    license.isLicensed = function(feature) {
-                        if (feature === "feat:showNonProdBanner") {
-                            return false;
-                        }
-                        return true;
-                    };
+                  license.getValue = (feature) => {
+                      if (feature === "planName") {
+                          return "Enterprise (Mocked)";
+                      }
+                      if (Object.values(LICENSE_QUOTAS).includes(feature)) {
+                          console.log(`[ENTERPRISE MOCK] Quota ${feature} set to unlimited`);
+                          return UNLIMITED_LICENSE_QUOTA;
+                      }
+                      if (Object.values(LICENSE_FEATURES).includes(feature)) {
+                          console.log(`[ENTERPRISE MOCK] Feature ${feature} enabled`);
+                          return true;
+                      }
+                      return origialGetValue(feature);
+                  };
 
-                    license.getValue = (feature) => {
-                        if (feature === "planName") {
-                            return "Enterprise (Mocked)";
-                        }
-                        if (Object.values(LICENSE_QUOTAS).includes(feature)) {
-                            console.log(\`[ENTERPRISE MOCK] Quota \${feature} set to unlimited\`);
-                            return UNLIMITED_LICENSE_QUOTA;
-                        }
-                        if (Object.values(LICENSE_FEATURES).includes(feature)) {
-                            console.log(\`[ENTERPRISE MOCK] Feature \${feature} enabled\`);
-                            return true;
-                        }
-                        return origialGetValue(feature);
-                    };
 
-                    // 启用所有企业版功能标志
-                    [
-                        "isAdvancedPermissionsLicensed", "isSharingEnabled", "isLdapEnabled",
-                        "isSamlEnabled", "isSourceControlLicensed", "isVariablesEnabled",
-                        "isExternalSecretsEnabled", "isWorkflowHistoryLicensed", "isLogStreamingEnabled",
-                        "isMultiMainLicensed", "isBinaryDataS3Licensed", "isDebugInEditorLicensed",
-                        "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled",
-                        "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed",
-                        "isCustomNpmRegistryEnabled", "isWithinUsersLimit"
-                    ].forEach((key) => { license[key] = () => true; });
+                  [
+                      "isAdvancedPermissionsLicensed", "isSharingEnabled", "isLdapEnabled",
+                      "isSamlEnabled", "isSourceControlLicensed", "isVariablesEnabled",
+                      "isExternalSecretsEnabled", "isWorkflowHistoryLicensed", "isLogStreamingEnabled",
+                      "isMultiMainLicensed", "isBinaryDataS3Licensed", "isDebugInEditorLicensed",
+                      "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled",
+                      "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed",
+                      "isCustomNpmRegistryEnabled", "isWithinUsersLimit"
+                  ].forEach((key) => { license[key] = () => true; });
 
-                    // 设置无限配额
-                    [
-                        "getUsersLimit", "getTriggerLimit", "getVariablesLimit",
-                        "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"
-                    ].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; });
+                  [
+                      "getUsersLimit", "getTriggerLimit", "getVariablesLimit",
+                      "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"
+                  ].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; });
 
-                    // 其他企业版设置
-                    license.isAPIDisabled = () => false;
-                    license.isAiAssistantEnabled = () => false;
-                    license.getAiCredits = () => 999999;
-                    license.getPlanName = () => "Enterprise (Mocked)";
-                    license.getConsumerId = () => "enterprise-mock-consumer";
-                    license.getManagementJwt = () => "mock-jwt-token";
+                  license.isAPIDisabled = () => false;
+                  license.isAiAssistantEnabled = () => false;
+                  license.getAiCredits = () => 999999;
+                  license.getPlanName = () => "Enterprise (Mocked)";
+                  license.getConsumerId = () => "enterprise-mock-consumer";
+                  license.getManagementJwt = () => "mock-jwt-token";
 
-                    console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled");
-                } catch (error) {
-                    console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error);
-                }
-            }
+                  console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled");
+              } catch (error) {
+                  console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error);
+              }
+          }
 
-            BaseCommand.prototype.init = async function() {
-                await originalInit.call(this);
-                await this.initLicense();
-            };
+          BaseCommand.prototype.init = async function() {
+              await originalInit.call(this);
+              await this.initLicense();
+          };
 
-            BaseCommand.prototype.initLicense = async function() {
-                await originalInitLicense.call(this);
-                initEnterpriseMock();
-            };
-            EOT
-            awk '/^exports\.BaseCommand = BaseCommand;$/{system("cat /tmp/enterprise-mock.js")}1' ${TARGET_FILE} > ${TARGET_FILE}.tmp
-            mv ${TARGET_FILE}.tmp ${TARGET_FILE}
-            rm /tmp/enterprise-mock.js
-        EOF
+          BaseCommand.prototype.initLicense = async function() {
+              await originalInitLicense.call(this);
+              initEnterpriseMock();
+          };
+          EOT
+              awk '/^exports\.BaseCommand = BaseCommand;$/{system("cat /tmp/enterprise-mock.js")}1' ${TARGET_FILE} > ${TARGET_FILE}.tmp
+              mv ${TARGET_FILE}.tmp ${TARGET_FILE}
+              rm /tmp/enterprise-mock.js
+          EORUN
+          # --- 企业版功能启用结束 ---
 
-        # 切换回 node 用户
-        USER node
-        DOCKERFILE_EOF
+          USER node
 
-        # 替换版本占位符
-        sed -i "s/DOCKERFILE_VERSION_PLACEHOLDER/$N8N_VERSION/g" Dockerfile
+          COPY --from=ui_holder /app/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
+          EOF
+          # 将变量替换到 FROM 指令中
+          sed -i "s/\${N8N_VERSION}/$N8N_VERSION/g" Dockerfile
+          echo "--- Dockerfile 内容 ---"
+          cat Dockerfile
+          echo "-----------------------"
 
-        cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
+      - name: 登录到 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: 设置 Docker Buildx # 步骤6: 设置Docker Buildx，用于更高效和安全的构建
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      uses: docker/setup-buildx-action@v3
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-    - name: 登录到 Docker Hub # 步骤7: 登录到Docker Hub
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      uses: docker/login-action@v3
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: 构建并推送企业版 Docker 镜像
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          标签: |
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-    - name: 调试最终镜像标签 # 步骤8: 打印最终的标签字符串，方便调试
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      run: |
-        # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
-        echo "--- 调试企业版镜像标签 ---"
-        echo "企业版版本标签: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}-enterprise'"
-        echo "企业版最新标签: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:enterprise'"
-        echo "----------------------------------"
-
-    - name: 构建并推送企业版 Docker 镜像 # 步骤9: 构建并推送企业版Docker镜像 (同时打上版本号和enterprise标签)
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
-      with:
-        context: . # Dockerfile 所在的上下文路径
-        push: true # 启用推送
-        # 定义要推送的企业版标签，每行一个
-        tags: |
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ steps.get_n8n_version.outputs.n8n_version }}-enterprise
-          ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:enterprise
-        cache-from: type=gha # 启用GitHub Actions缓存
-        cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
-
-    - name: 更新 README 文件中的企业版版本号 # 步骤10: 更新README中的企业版版本标签
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      run: |
-        NEW_VERSION="${{ steps.get_n8n_version.outputs.n8n_version }}"
-        DOCKER_USER="${{ env.DOCKERHUB_USERNAME }}" # 获取清理后的 Docker Hub 用户名
-        echo "正在更新 README.md 企业版版本至: $NEW_VERSION (Docker 用户: $DOCKER_USER)"
-
-        # 更新 README.md 中的企业版版本标签
-        # 动态替换 Docker 用户名和版本号
-        # 注意：这里使用 sed 命令时，如果 DOCKER_USER 包含特殊字符，可能会需要额外的转义。
-        # 假设 DOCKER_USER 是标准的 Docker Hub 用户名，不包含 sed 的特殊字符。
-        sed -i "s|${DOCKER_USER}/n8n-chinese:[0-9]\+\.[0-9]\+\.[0-9]\+-enterprise|${DOCKER_USER}/n8n-chinese:$NEW_VERSION-enterprise|g" README.md
-
-        # 显示更新内容
-        echo "更新后的 README.md 企业版内容片段:"
-        grep -n "${DOCKER_USER}/n8n-chinese.*enterprise" README.md || true
-
-        # 配置 Git 用户信息
-        git config --local user.email "action@github.com"
-        git config --local user.name "GitHub Action"
-
-        # 提交更新
-        git add README.md
-        if git diff --staged --quiet; then
-          echo "README.md 没有变化。"
-        else
-          echo "🤖 自动更新 README 企业版版本标签至 ${NEW_VERSION}-enterprise" > commit_message.txt
-          echo "" >> commit_message.txt
-          echo "- 更新所有 ${DOCKER_USER}/n8n-chinese 企业版版本标签引用" >> commit_message.txt
-          echo "- 版本号: ${NEW_VERSION}-enterprise" >> commit_message.txt
-          echo "- 企业版功能包含完整的企业版特性解锁" >> commit_message.txt
-          echo "- 自动构建流程更新" >> commit_message.txt
-          echo "" >> commit_message.txt
-          echo "🤖 由 GitHub Actions 生成" >> commit_message.txt
-          echo "" >> commit_message.txt
-          echo "Co-Authored-By: GitHub Action <action@github.com>" >> commit_message.txt
-
-          git commit -F commit_message.txt
-          rm commit_message.txt
-          # 推送新的 Git Tag 到当前仓库，以标记此企业版版本已处理
-          ENTERPRISE_TAG="${{ steps.get_release.outputs.tag }}-enterprise"
-          git tag "$ENTERPRISE_TAG" # 使用上游的 tag + -enterprise 作为当前仓库的 tag
-          git push origin "$ENTERPRISE_TAG" # 推送新创建的 Git Tag
-          git push # 推送 README.md 的更新
-        fi
+      - name: 更新 README (企业版)
+        run: |
+          NEW_VERSION="${{ needs.check.outputs.n8n_version }}"
+          DOCKER_USER="${{ env.DOCKERHUB_USERNAME }}"
+          IMAGE_NAME="n8n-chinese-enterprise"
+          
+          sed -i "s|${DOCKER_USER}/${IMAGE_NAME}:[0-9]\+\.[0-9]\+\.[0-9]\+|${DOCKER_USER}/${IMAGE_NAME}:${NEW_VERSION}|g" README.md
+          
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          git add README.md
+          if git diff --staged --quiet; then
+            echo "README.md 没有变化。"
+          else
+            git commit -m "ci: 更新企业版 README 版本至 ${NEW_VERSION}"
+            git push
+          fi
