@@ -94,32 +94,8 @@ jobs:
         N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
         echo "正在为 n8n 企业版版本: $N8N_VERSION 生成多阶段 Dockerfile"
 
-        # 创建企业版 Dockerfile
-        cat > Dockerfile.enterprise <<DOCKERFILE
-        # --- 阶段 1: ui_holder (用于从构建上下文复制 dist 文件) ---
-        FROM alpine:latest as ui_holder
-        WORKDIR /app
-        # 将 GitHub Actions Runner 上已存在的 src-dist/dist 目录复制到这一阶段的镜像中
-        COPY src-dist/dist /app/dist
-
-        # --- 阶段 2: Final n8n Enterprise Image (最终企业版镜像) ---
-        FROM n8nio/n8n:\${N8N_VERSION}
-        USER root
-
-        RUN apk update && \\
-            apk add --no-cache ffmpeg && \\
-            rm -rf /var/cache/apk/*
-
-        USER node
-
-        # 从 ui_holder 阶段复制纯净的 dist 文件到 n8n 的 editor-ui 目录
-        COPY --from=ui_holder /app/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
-
-        # 添加企业版功能模拟
-        ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
-
-        RUN set -e && \\
-            cat > /tmp/enterprise-mock.js <<'EOT' && \\
+        # 先创建企业功能模拟的 JavaScript 文件
+        cat > enterprise-mock.js <<'EOF'
         const originalInit = BaseCommand.prototype.init;
         const originalInitLicense = BaseCommand.prototype.initLicense;
 
@@ -200,14 +176,39 @@ jobs:
             await originalInitLicense.call(this);
             initEnterpriseMock();
         };
-        EOT
-            sed '/^exports\.BaseCommand = BaseCommand;$/r /tmp/enterprise-mock.js' "\${TARGET_FILE}" > "\${TARGET_FILE}.tmp" && \\
-            mv "\${TARGET_FILE}.tmp" "\${TARGET_FILE}" && \\
+        EOF
+
+        # 创建企业版 Dockerfile
+        cat > Dockerfile.enterprise <<DOCKERFILE
+        # --- 阶段 1: ui_holder (用于从构建上下文复制 dist 文件) ---
+        FROM alpine:latest AS ui_holder
+        WORKDIR /app
+        # 将 GitHub Actions Runner 上已存在的 src-dist/dist 目录复制到这一阶段的镜像中
+        COPY src-dist/dist /app/dist
+
+        # --- 阶段 2: Final n8n Enterprise Image (最终企业版镜像) ---
+        FROM n8nio/n8n:$N8N_VERSION
+        USER root
+
+        RUN apk update && \\
+            apk add --no-cache ffmpeg && \\
+            rm -rf /var/cache/apk/*
+
+        USER node
+
+        # 从 ui_holder 阶段复制纯净的 dist 文件到 n8n 的 editor-ui 目录
+        COPY --from=ui_holder /app/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
+
+        # 复制企业功能模拟脚本
+        COPY enterprise-mock.js /tmp/enterprise-mock.js
+
+        # 添加企业版功能模拟
+        ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
+
+        RUN sed '/^exports\.BaseCommand = BaseCommand;$/r /tmp/enterprise-mock.js' "${TARGET_FILE}" > "${TARGET_FILE}.tmp" && \\
+            mv "${TARGET_FILE}.tmp" "${TARGET_FILE}" && \\
             rm /tmp/enterprise-mock.js
         DOCKERFILE
-
-        # 替换 N8N_VERSION 变量
-        sed -i 's/\${N8N_VERSION}/'"$N8N_VERSION"'/g' Dockerfile.enterprise
 
         cat Dockerfile.enterprise # 打印生成的 Dockerfile 内容以供调试
 
