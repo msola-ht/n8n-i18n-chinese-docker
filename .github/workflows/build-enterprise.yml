@@ -169,7 +169,7 @@ jobs:
           file: ./Dockerfile.enterprise
           push: true
           # 请确保这里是 tags，不是“标签”
-          标签: |
+          tags: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:latest
           cache-from: type=gha
