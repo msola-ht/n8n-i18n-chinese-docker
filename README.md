@@ -25,26 +25,26 @@
 - **仓库名称**: `lunare/n8n-chinese`
 - **标签策略**:
   - `lunare/n8n-chinese:1.120.4` - 对应具体 n8n 版本（自动同步至最新构建版本）
-  - `lunare/n8n-chinese:latest` - 最新版本
+  - `lunare/n8n-chinese:1.120.4latest` - 最新版本
 
 ### 快速使用
 
 ```bash
 # 拉取最新镜像
-docker pull lunare/n8n-chinese:latest
+docker pull lunare/n8n-chinese:1.120.4latest
 
 # 拉取指定版本（版本号与 README 中的示例保持同步）
 docker pull lunare/n8n-chinese:1.120.4
 
 # 运行容器（基础版本）
-docker run -d -p 5678:5678 lunare/n8n-chinese:latest
+docker run -d -p 5678:5678 lunare/n8n-chinese:1.120.4latest
 
 # 运行容器（包含中文环境变量）
 docker run -d \
   -p 5678:5678 \
   -e N8N_DEFAULT_LOCALE=zh-CN \
   -e GENERIC_TIMEZONE=Asia/Shanghai \
-  lunare/n8n-chinese:latest
+  lunare/n8n-chinese:1.120.4latest
 ```
 
 ## 🚀 生产环境部署
