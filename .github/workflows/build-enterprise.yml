@@ -1,4 +1,4 @@
-name: 构建 n8n 中-文社区版和企业版 Docker 镜像
+name: 构建 n8n 中文社区版和企业版 Docker 镜像
 
 on:
   schedule:
@@ -168,7 +168,7 @@ jobs:
           context: .
           file: ./Dockerfile.enterprise
           push: true
-          # 修正：将中文“标签”改为正确的英文“tags”
+          # 请确保这里是 tags，不是“标签”
           标签: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:latest
