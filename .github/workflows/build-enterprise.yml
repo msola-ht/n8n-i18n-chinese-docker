@@ -76,138 +76,114 @@ jobs:
         echo "清理后的用户名长度: ${#CLEAN_DOCKERHUB_USERNAME}"
         echo "DOCKERHUB_USERNAME=$CLEAN_DOCKERHUB_USERNAME" >> "$GITHUB_ENV" # 将清理后的用户名设置为环境变量，供后续步骤使用
 
-    - name: 下载上游发布文件 # 步骤5: 下载上游的 editor-ui dist 文件
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      run: |
-        mkdir -p src-dist
-        curl -L "${{ steps.get_release.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
-        echo "已下载 ${{ steps.get_release.outputs.asset_url }}"
-
-    - name: 解压 dist 文件 # 步骤6: 解压下载的 tar.gz 文件
-      if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
-      run: |
-        tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
-        echo "已解压 dist 文件到 src-dist/dist"
-
-    - name: 生成企业版 Dockerfile (多阶段构建) # 步骤7: 动态生成企业版 Dockerfile，使用多阶段构建
+    - name: 生成企业版 Dockerfile # 步骤5: 基于现有中文版镜像生成企业版 Dockerfile
       if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
       run: |
         N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
         echo "正在为 n8n 企业版版本: $N8N_VERSION 生成多阶段 Dockerfile"
 
-        # 创建企业版 Dockerfile
+        # 创建企业版 Dockerfile（基于 lunare/n8n-chinese 镜像）
         cat > Dockerfile << 'DOCKERFILE_EOF'
-        # --- 阶段 1: ui_holder (用于从构建上下文复制 dist 文件) ---
-        # 这一阶段使用一个轻量级的基础镜像，只为了"持有"我们已下载和解压的 dist 文件。
-        # 这样做可以确保最终镜像只包含这些文件，而不是整个 src-dist 目录的临时内容。
-        FROM alpine:latest as ui_holder
-        WORKDIR /app
-        # 将 GitHub Actions Runner 上已存在的 src-dist/dist 目录复制到这一阶段的镜像中
-        COPY src-dist/dist /app/dist
+        # 基于现有的中文版镜像构建企业版
+        FROM lunare/n8n-chinese:DOCKERFILE_VERSION_PLACEHOLDER
 
-        # --- 阶段 2: Final n8n Enterprise Image (最终企业版镜像) ---
-        FROM n8nio/n8n:DOCKERFILE_VERSION_PLACEHOLDER
+        # 切换到 root 用户以修改系统文件
         USER root
 
-        RUN apk update \\
-            && apk add --no-cache ffmpeg \\
-            && rm -rf /var/cache/apk/*
-
-        USER node
-
-        # 从 ui_holder 阶段复制纯净的 dist 文件到 n8n 的 editor-ui 目录
-        COPY --from=ui_holder /app/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
-
-        # 注入企业版功能
+        # 设置目标文件路径
         ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
 
-        RUN cat > /tmp/enterprise-mock.js << 'MOCK_EOF'
-        const originalInit = BaseCommand.prototype.init;
-        const originalInitLicense = BaseCommand.prototype.initLicense;
+        # 注入企业版功能
+        RUN <<EOF
+            cat > /tmp/enterprise-mock.js <<EOT
+          const originalInit = BaseCommand.prototype.init;
+            const originalInitLicense = BaseCommand.prototype.initLicense;
 
-        function initEnterpriseMock() {
-            const { Container } = require("@n8n/di");
-            const { License } = require("../license");
-            const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants");
+            function initEnterpriseMock() {
+                const { Container } = require("@n8n/di");
+                const { License } = require("../license");
+                const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants");
 
-            try {
-                const license = Container.get(License);
-                if (!license) {
-                    console.warn("[ENTERPRISE MOCK] License service not available");
-                    return;
-                }
-
-                const origialGetValue = license.getValue.bind(license);
-
-                license.isLicensed = function(feature) {
-                    if (feature === "feat:showNonProdBanner") {
-                        return false;
+                try {
+                    const license = Container.get(License);
+                    if (!license) {
+                        console.warn("[ENTERPRISE MOCK] License service not available");
+                        return;
                     }
-                    return true;
-                };
 
-                license.getValue = (feature) => {
-                    if (feature === "planName") {
-                        return "Enterprise (Mocked)";
-                    }
-                    if (Object.values(LICENSE_QUOTAS).includes(feature)) {
-                        console.log("[ENTERPRISE MOCK] Quota " + feature + " set to unlimited");
-                        return UNLIMITED_LICENSE_QUOTA;
-                    }
-                    if (Object.values(LICENSE_FEATURES).includes(feature)) {
-                        console.log("[ENTERPRISE MOCK] Feature " + feature + " enabled");
+                    const originalIsLicensed = license.isLicensed.bind(license);
+                    const origialGetValue = license.getValue.bind(license);
+
+                    license.isLicensed = function(feature) {
+                        if (feature === "feat:showNonProdBanner") {
+                            return false;
+                        }
                         return true;
-                    }
-                    return origialGetValue(feature);
-                };
+                    };
 
-                // 启用所有企业版功能标志
-                [
-                    "isAdvancedPermissionsLicensed", "isSharingEnabled", "isLdapEnabled",
-                    "isSamlEnabled", "isSourceControlLicensed", "isVariablesEnabled",
-                    "isExternalSecretsEnabled", "isWorkflowHistoryLicensed", "isLogStreamingEnabled",
-                    "isMultiMainLicensed", "isBinaryDataS3Licensed", "isDebugInEditorLicensed",
-                    "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled",
-                    "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed",
-                    "isCustomNpmRegistryEnabled", "isWithinUsersLimit"
-                ].forEach((key) => { license[key] = () => true; });
+                    license.getValue = (feature) => {
+                        if (feature === "planName") {
+                            return "Enterprise (Mocked)";
+                        }
+                        if (Object.values(LICENSE_QUOTAS).includes(feature)) {
+                            console.log(\`[ENTERPRISE MOCK] Quota \${feature} set to unlimited\`);
+                            return UNLIMITED_LICENSE_QUOTA;
+                        }
+                        if (Object.values(LICENSE_FEATURES).includes(feature)) {
+                            console.log(\`[ENTERPRISE MOCK] Feature \${feature} enabled\`);
+                            return true;
+                        }
+                        return origialGetValue(feature);
+                    };
 
-                // 设置无限配额
-                [
-                    "getUsersLimit", "getTriggerLimit", "getVariablesLimit",
-                    "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"
-                ].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; });
+                    // 启用所有企业版功能标志
+                    [
+                        "isAdvancedPermissionsLicensed", "isSharingEnabled", "isLdapEnabled",
+                        "isSamlEnabled", "isSourceControlLicensed", "isVariablesEnabled",
+                        "isExternalSecretsEnabled", "isWorkflowHistoryLicensed", "isLogStreamingEnabled",
+                        "isMultiMainLicensed", "isBinaryDataS3Licensed", "isDebugInEditorLicensed",
+                        "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled",
+                        "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed",
+                        "isCustomNpmRegistryEnabled", "isWithinUsersLimit"
+                    ].forEach((key) => { license[key] = () => true; });
 
-                // 其他企业版设置
-                license.isAPIDisabled = () => false;
-                license.isAiAssistantEnabled = () => false;
-                license.getAiCredits = () => 999999;
-                license.getPlanName = () => "Enterprise (Mocked)";
-                license.getConsumerId = () => "enterprise-mock-consumer";
-                license.getManagementJwt = () => "mock-jwt-token";
+                    // 设置无限配额
+                    [
+                        "getUsersLimit", "getTriggerLimit", "getVariablesLimit",
+                        "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"
+                    ].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; });
 
-                console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled");
-            } catch (error) {
-                console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error);
+                    // 其他企业版设置
+                    license.isAPIDisabled = () => false;
+                    license.isAiAssistantEnabled = () => false;
+                    license.getAiCredits = () => 999999;
+                    license.getPlanName = () => "Enterprise (Mocked)";
+                    license.getConsumerId = () => "enterprise-mock-consumer";
+                    license.getManagementJwt = () => "mock-jwt-token";
+
+                    console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled");
+                } catch (error) {
+                    console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error);
+                }
             }
-        }
 
-        BaseCommand.prototype.init = async function() {
-            await originalInit.call(this);
-            await this.initLicense();
-        };
+            BaseCommand.prototype.init = async function() {
+                await originalInit.call(this);
+                await this.initLicense();
+            };
 
-        BaseCommand.prototype.initLicense = async function() {
-            await originalInitLicense.call(this);
-            initEnterpriseMock();
-        };
-        MOCK_EOF
+            BaseCommand.prototype.initLicense = async function() {
+                await originalInitLicense.call(this);
+                initEnterpriseMock();
+            };
+            EOT
+            awk '/^exports\.BaseCommand = BaseCommand;$/{system("cat /tmp/enterprise-mock.js")}1' ${TARGET_FILE} > ${TARGET_FILE}.tmp
+            mv ${TARGET_FILE}.tmp ${TARGET_FILE}
+            rm /tmp/enterprise-mock.js
+        EOF
 
-        # 安全地注入企业版代码
-        RUN cp ${TARGET_FILE} ${TARGET_FILE}.backup && \\
-            cat /tmp/enterprise-mock.js >> ${TARGET_FILE} && \\
-            rm -f /tmp/enterprise-mock.js && \\
-            echo "[ENTERPRISE MOCK] ✅ Enterprise features injected successfully"
+        # 切换回 node 用户
+        USER node
         DOCKERFILE_EOF
 
         # 替换版本占位符
@@ -215,18 +191,18 @@ jobs:
 
         cat Dockerfile # 打印生成的 Dockerfile 内容以供调试
 
-    - name: 设置 Docker Buildx # 步骤8: 设置Docker Buildx，用于更高效和安全的构建
+    - name: 设置 Docker Buildx # 步骤6: 设置Docker Buildx，用于更高效和安全的构建
       if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
       uses: docker/setup-buildx-action@v3
 
-    - name: 登录到 Docker Hub # 步骤9: 登录到Docker Hub
+    - name: 登录到 Docker Hub # 步骤7: 登录到Docker Hub
       if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
       uses: docker/login-action@v3
       with:
         username: ${{ secrets.DOCKERHUB_USERNAME }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-    - name: 调试最终镜像标签 # 步骤10: 打印最终的标签字符串，方便调试
+    - name: 调试最终镜像标签 # 步骤8: 打印最终的标签字符串，方便调试
       if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
       run: |
         # 使用通过 $GITHUB_ENV 设置的清理后的 DOCKERHUB_USERNAME
@@ -235,7 +211,7 @@ jobs:
         echo "企业版最新标签: '${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:enterprise'"
         echo "----------------------------------"
 
-    - name: 构建并推送企业版 Docker 镜像 # 步骤11: 构建并推送企业版Docker镜像 (同时打上版本号和enterprise标签)
+    - name: 构建并推送企业版 Docker 镜像 # 步骤9: 构建并推送企业版Docker镜像 (同时打上版本号和enterprise标签)
       if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
       uses: docker/build-push-action@v5 # 推荐使用此官方action，一步完成构建和推送
       with:
@@ -248,7 +224,7 @@ jobs:
         cache-from: type=gha # 启用GitHub Actions缓存
         cache-to: type=gha,mode=max # 将构建缓存写入GitHub Actions
 
-    - name: 更新 README 文件中的企业版版本号 # 步骤12: 更新README中的企业版版本标签
+    - name: 更新 README 文件中的企业版版本号 # 步骤10: 更新README中的企业版版本标签
       if: steps.check_tag.outputs.exists == 'false' # 只有在未发布时才执行
       run: |
         NEW_VERSION="${{ steps.get_n8n_version.outputs.n8n_version }}"
