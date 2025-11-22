@@ -201,7 +201,7 @@ jobs:
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
-          
+          git fetch --tags
           sed -i "s|${DOCKER_USER}/n8n-chinese:[0-9.]*|${DOCKER_USER}/n8n-chinese:${NEW_VERSION}|g" README.md
           sed -i "s|${DOCKER_USER}/n8n-chinese-enterprise:[0-9.]*|${DOCKER_USER}/n8n-chinese-enterprise:${NEW_VERSION}|g" README.md
           
