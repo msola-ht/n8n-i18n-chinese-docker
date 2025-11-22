@@ -203,8 +203,7 @@ jobs:
         COPY enterprise-mock.js /tmp/enterprise-mock.js
 
         # 添加企业版功能模拟
-        RUN sed '/^exports\.BaseCommand = BaseCommand;$/r /tmp/enterprise-mock.js' /usr/local/lib/node_modules/n8n/dist/commands/base-command.js > /usr/local/lib/node_modules/n8n/dist/commands/base-command.js.tmp && \\
-            mv /usr/local/lib/node_modules/n8n/dist/commands/base-command.js.tmp /usr/local/lib/node_modules/n8n/dist/commands/base-command.js && \\
+        RUN cat /tmp/enterprise-mock.js >> /usr/local/lib/node_modules/n8n/dist/commands/base-command.js && \\
             rm /tmp/enterprise-mock.js
         DOCKERFILE
 
