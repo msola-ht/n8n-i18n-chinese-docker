@@ -42,13 +42,15 @@ jobs:
           latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
           tag=$(echo "$latest_release" | jq -r .tag_name | xargs)
           asset_url=$(echo "$latest_release" | jq -r '.assets[] | select(.name|endswith(".tar.gz")) | .browser_download_url' | xargs)
-          echo "tag=$tag" >> "asset_url=$asset_url" >> 
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "asset_url=$asset_url" >> "$GITHUB_OUTPUT"
+
       - name: 从标签中提取 n8n 版本号
         id: get_n8n_version
         run: |
           TAG_REF="${{ steps.get_release.outputs.tag }}"
           N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
-          echo "n8n_version=$N8N_VERSION" >> 
+          echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT"
           echo "检测到上游版本: ${N8N_VERSION}"
 
       - name: 检查 Docker Hub 上的镜像是否存在
@@ -74,13 +76,13 @@ jobs:
             BUILD_ENTERPRISE="true"
           fi
 
-          echo "build_community=${BUILD_COMMUNITY}" >> 
-          echo "build_enterprise=${BUILD_ENTERPRISE}" >> 
+          echo "build_community=${BUILD_COMMUNITY}" >> "$GITHUB_OUTPUT"
+          echo "build_enterprise=${BUILD_ENTERPRISE}" >> "$GITHUB_OUTPUT"
           
           if [[ "$BUILD_COMMUNITY" == "true" || "$BUILD_ENTERPRISE" == "true" ]]; then
-            echo "should_run_anything=true" >> 
+            echo "should_run_anything=true" >> "$GITHUB_OUTPUT"
           else
-            echo "should_run_anything=false" >> 
+            echo "should_run_anything=false" >> "$GITHUB_OUTPUT"
             echo "所有镜像均已存在且未强制构建，无需执行任何操作。"
           fi
 
@@ -114,15 +116,13 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: true
-          # 直接在这里定义一个简单的 Dockerfile 内容
           file: ./Dockerfile.community
+          push: true
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          # 使用 build-args 动态传入基础镜像版本
           build-args: |
             N8N_VERSION=${{ needs.check.outputs.n8n_version }}
 
@@ -168,7 +168,7 @@ jobs:
           context: .
           file: ./Dockerfile.enterprise
           push: true
-          tags: |
+          标签: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:latest
           cache-from: type=gha
