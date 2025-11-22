@@ -93,7 +93,9 @@ jobs:
       run: |
         N8N_VERSION=${{ steps.get_n8n_version.outputs.n8n_version }} # 使用提取出的纯粹版本号
         echo "正在为 n8n 企业版版本: $N8N_VERSION 生成多阶段 Dockerfile"
-        cat <<EOF > Dockerfile.enterprise
+
+        # 创建企业版 Dockerfile
+        cat > Dockerfile.enterprise <<'DOCKERFILE'
         # --- 阶段 1: ui_holder (用于从构建上下文复制 dist 文件) ---
         FROM alpine:latest as ui_holder
         WORKDIR /app
@@ -116,15 +118,18 @@ jobs:
         # 添加企业版功能模拟
         ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
 
-        RUN <<EOF
-            cat > /tmp/enterprise-mock.js <<EOT
+        RUN set -e; \\
+            cat > /tmp/enterprise-mock.js <<'EOT';
         const originalInit = BaseCommand.prototype.init;
         const originalInitLicense = BaseCommand.prototype.initLicense;
 
         function initEnterpriseMock() {
-            const { Container } = require("@n8n/di");
-            const { License } = require("../license");
-            const { LICENSE_QUOTAS, LICENSE_FEATURES, UNLIMITED_LICENSE_QUOTA } = require("@n8n/constants");
+            const Container = require("@n8n/di").Container;
+            const License = require("../license").License;
+            const constants = require("@n8n/constants");
+            const LICENSE_QUOTAS = constants.LICENSE_QUOTAS;
+            const LICENSE_FEATURES = constants.LICENSE_FEATURES;
+            const UNLIMITED_LICENSE_QUOTA = constants.UNLIMITED_LICENSE_QUOTA;
 
             try {
                 const license = Container.get(License);
@@ -143,16 +148,16 @@ jobs:
                     return true;
                 };
 
-                license.getValue = (feature) => {
+                license.getValue = function(feature) {
                     if (feature === "planName") {
                         return "Enterprise (Mocked)";
                     }
                     if (Object.values(LICENSE_QUOTAS).includes(feature)) {
-                        console.log(\`[ENTERPRISE MOCK] Quota \${feature} set to unlimited\`);
+                        console.log("[ENTERPRISE MOCK] Quota " + feature + " set to unlimited");
                         return UNLIMITED_LICENSE_QUOTA;
                     }
                     if (Object.values(LICENSE_FEATURES).includes(feature)) {
-                        console.log(\`[ENTERPRISE MOCK] Feature \${feature} enabled\`);
+                        console.log("[ENTERPRISE MOCK] Feature " + feature + " enabled");
                         return true;
                     }
                     return origialGetValue(feature);
@@ -166,21 +171,21 @@ jobs:
                     "isWorkerViewLicensed", "isAiCreditsEnabled", "isFoldersEnabled",
                     "isProjectRoleAdminLicensed", "isProjectRoleEditorLicensed", "isProjectRoleViewerLicensed",
                     "isCustomNpmRegistryEnabled", "isWithinUsersLimit"
-                ].forEach((key) => { license[key] = () => true; });
+                ].forEach(function(key) { license[key] = function() { return true; }; });
 
                 [
                     "getUsersLimit", "getTriggerLimit", "getVariablesLimit",
                     "getWorkflowHistoryPruneLimit", "getTeamProjectLimit"
-                ].forEach((key) => { license[key] = () => UNLIMITED_LICENSE_QUOTA; });
+                ].forEach(function(key) { license[key] = function() { return UNLIMITED_LICENSE_QUOTA; }; });
 
-                license.isAPIDisabled = () => false;
-                license.isAiAssistantEnabled = () => false;
-                license.getAiCredits = () => 999999;
-                license.getPlanName = () => "Enterprise (Mocked)";
-                license.getConsumerId = () => "enterprise-mock-consumer";
-                license.getManagementJwt = () => "mock-jwt-token";
+                license.isAPIDisabled = function() { return false; };
+                license.isAiAssistantEnabled = function() { return false; };
+                license.getAiCredits = function() { return 999999; };
+                license.getPlanName = function() { return "Enterprise (Mocked)"; };
+                license.getConsumerId = function() { return "enterprise-mock-consumer"; };
+                license.getManagementJwt = function() { return "mock-jwt-token"; };
 
-                console.log("[ENTERPRISE MOCK] ✅ All enterprise features enabled");
+                console.log("[ENTERPRISE MOCK] All enterprise features enabled");
             } catch (error) {
                 console.error("[ENTERPRISE MOCK] Failed to enable enterprise mock:", error);
             }
@@ -195,12 +200,13 @@ jobs:
             await originalInitLicense.call(this);
             initEnterpriseMock();
         };
-        EOT
-            awk '/^exports\.BaseCommand = BaseCommand;$/{system("cat /tmp/enterprise-mock.js")}1' \${TARGET_FILE} > \${TARGET_FILE}.tmp
-            mv \${TARGET_FILE}.tmp \${TARGET_FILE}
+        EOT;
+            \\
+            sed '/^exports\.BaseCommand = BaseCommand;$/r /tmp/enterprise-mock.js' "${TARGET_FILE}" > "${TARGET_FILE}.tmp"; \\
+            mv "${TARGET_FILE}.tmp" "${TARGET_FILE}"; \\
             rm /tmp/enterprise-mock.js
-        EOF
-        EOF
+        DOCKERFILE
+
         cat Dockerfile.enterprise # 打印生成的 Dockerfile 内容以供调试
 
     - name: 设置 Docker Buildx # 步骤8: 设置Docker Buildx，用于更高效和安全的构建
