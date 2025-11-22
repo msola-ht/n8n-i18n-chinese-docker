@@ -1,8 +1,0 @@
-# 声明一个构建参数，它的值将由 GitHub Actions 传入
-ARG N8N_VERSION=latest
-
-# 使用传入的版本号作为基础镜像
-FROM n8nio/n8n:${N8N_VERSION}
-
-# 复制中文 UI 文件
-COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist

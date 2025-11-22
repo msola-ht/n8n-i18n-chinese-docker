@@ -1,127 +1,155 @@
-# CLAUDE.md
+# n8n-i18n-chinese-docker 项目文档
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+## 变更记录 (Changelog)
 
-## 项目概述
+### 2025-11-22
+- 初始化项目文档
+- 生成模块结构图
+- 创建 docker-win 模块级文档
+- 添加导航面包屑功能
 
-这是一个自动化构建工具项目，专门用于为 n8n 工作流自动化平台构建包含中文语言包的 Docker 镜像。项目自动同步上游 `other-blowsnow/n8n-i18n-chinese` 仓库的最新 Release，构建中文版 n8n 镜像并发布到 Docker Hub。
+## 项目愿景
 
-## 核心架构
+构建和分发包含完整中文语言包和 FFmpeg 支持的 n8n Docker 镜像，为中文用户提供开箱即用的自动化工作流平台。项目基于上游中文语言包仓库，通过 GitHub Actions 自动化构建流程，确保用户能够获得最新版本的中文本地化 n8n 服务。
 
-### 自动化构建流程
-- **GitHub Actions**: `.github/workflows/build.yml` - 每小时检查上游更新，自动构建发布
-- **多阶段 Docker 构建**: 使用 Alpine 轻量级镜像作为中间阶段，优化最终镜像大小
-- **上游集成**: 通过 GitHub API 自动检测版本更新并下载中文语言包
+## 架构总览
 
-### 主要组件
-1. **CI/CD 工作流**: 完整的自动化构建、测试、发布流程
-2. **Docker 配置**: 生产就绪的容器化部署配置
-3. **上游同步机制**: 自动化版本检测和资源下载
+### 技术架构
+- **基础镜像**: 基于 `n8nio/n8n:${N8N_VERSION}` 官方镜像
+- **构建方式**: 多阶段 Docker 构建，集成中文 UI 和 FFmpeg
+- **自动化**: GitHub Actions 监控上游更新，自动构建发布
+- **部署方案**: Docker Compose 一键部署，支持 Windows 和 Linux
 
-## 常用开发命令
+### 核心特性
+- 🔄 **自动同步**: 每小时检查上游更新，自动构建最新版本
+- 🐳 **优化构建**: 多阶段 Docker 构建，镜像体积更小
+- 🇨🇳 **完整中文**: 集成完整中文语言包，支持中文界面
+- 🎬 **FFmpeg 支持**: 预装 FFmpeg，支持视频、音频处理工作流
+- 🏢 **企业版支持**: 提供企业版镜像，启用所有企业级功能
+- 🚀 **开箱即用**: Windows 一键启动，零配置部署
 
-### 本地开发环境启动
+## 模块结构图
+
+```mermaid
+graph TD
+    A["(根) n8n-i18n-chinese-docker"] --> B["docker-win"];
+
+    click B "./docker-win/CLAUDE.md" "查看 docker-win 模块文档"
+
+    style A fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style B fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+```
+
+## 模块索引
+
+| 模块路径 | 语言 | 主要职责 | 入口文件 | 测试目录 | 配置文件 |
+|---------|------|----------|----------|----------|----------|
+| `docker-win/` | Batch/PowerShell | Windows 优化部署方案 | `Start-ZH.bat` | ❌ 无 | `docker-compose-*.yml` |
+
+## 运行与开发
+
+### 环境要求
+- Docker Desktop（Windows）或 Docker（Linux）
+- Git（用于克隆项目）
+- 可选：PowerShell（用于高级脚本功能）
+
+### 快速启动
+
+#### Windows 环境
 ```bash
-# 进入 Docker 配置目录
-cd docker
+# 克隆项目
+git clone https://github.com/msola-ht/n8n-i18n-chinese-docker.git
+cd n8n-i18n-chinese-docker/docker-win
 
-# 启动 n8n 服务和数据库
-docker-compose up -d
+# 中文用户推荐
+Start-ZH.bat
 
-# 查看服务状态
-docker-compose ps
-
-# 查看日志
-docker-compose logs -f n8n
+# 或英文环境
+Start-EN.bat
 ```
 
-### 镜像使用
+#### Linux/Mac 环境
 ```bash
-# 拉取最新镜像
-docker pull hotwa/n8n-chinese:latest
+# 克隆项目
+git clone https://github.com/msola-ht/n8n-i18n-chinese-docker.git
+cd n8n-i18n-chinese-docker/docker-win
 
-# 拉取指定版本
-docker pull hotwa/n8n-chinese:1.94.1
+# 中文版本
+docker-compose -f docker-compose-cn.yml up -d
 
-# 运行容器（基础版本）
-docker run -d -p 5678:5678 hotwa/n8n-chinese:latest
-
-# 运行容器（包含中文环境变量）
-docker run -d \
-  -p 5678:5678 \
-  -e N8N_DEFAULT_LOCALE=zh-CN \
-  -e GENERIC_TIMEZONE=Asia/Shanghai \
-  hotwa/n8n-chinese:latest
+# 英文版本
+docker-compose -f docker-compose-en.yml up -d
 ```
 
-### 手动触发构建
-在 GitHub 仓库的 Actions 页面手动触发 "Build n8n Chinese Editor-UI Docker Image" 工作流。
+### 访问地址
+- **Web UI**: http://127.0.0.1:5678
+- **默认语言**: 中文（中文环境配置）/英文（英文环境配置）
 
-## 关键配置说明
+## 测试策略
 
-### 必需的环境变量
-```bash
-# 中文界面配置
-N8N_DEFAULT_LOCALE=zh-CN
-GENERIC_TIMEZONE=Asia/Shanghai
+### 部署测试
+- Docker Desktop 状态检查
+- 容器启动和端口映射验证
+- Web UI 访问测试
+- 中文界面显示验证
 
-# 数据库配置（生产环境推荐）
-DB_TYPE=postgresdb
-DB_POSTGRESDB_HOST=postgres
-DB_POSTGRESDB_DATABASE=n8n
-DB_POSTGRESDB_USER=n8n
-DB_POSTGRESDB_PASSWORD=<secure_password>
+### 功能测试
+- 基础工作流创建和执行
+- 文件输入输出功能测试
+- FFmpeg 节点功能测试（如果有媒体文件）
+- 数据持久化验证
 
-# 安全配置
-N8N_BASIC_AUTH_ACTIVE=true
-N8N_BASIC_AUTH_USER=<username>
-N8N_BASIC_AUTH_PASSWORD=<secure_password>
-N8N_ENCRYPTION_KEY=<32_char_hex_key>
-```
+### 自动化测试
+- GitHub Actions 构建流程
+- 镜像发布到 Docker Hub
+- 版本同步机制验证
 
-### Docker 镜像标签策略
-- **版本标签**: `hotwa/n8n-chinese:1.94.1` - 对应具体 n8n 版本
-- **latest 标签**: `hotwa/n8n-chinese:latest` - 始终指向最新构建的版本
+## 编码规范
 
-## 项目结构
+### Docker 相关
+- 使用官方 n8n 镜像作为基础
+- 多阶段构建优化镜像大小
+- 明确的镜像标签策略
+- 环境变量命名采用大写加下划线
 
-```
-.
-├── .github/
-│   └── workflows/
-│       └── build.yml              # GitHub Actions CI/CD 工作流
-├── docker/
-│   └── docker-compose.yml         # 生产环境 Docker Compose 配置
-├── README.md                      # 项目说明文档
-└── CLAUDE.md                      # 本文件
-```
+### 脚本规范
+- Windows 批处理文件使用 UTF-8 编码
+- 提供中英文双语版本
+- 详细的错误检查和用户提示
+- 操作步骤清晰分步骤展示
 
-## 上游依赖
+### 文档规范
+- 中英文对照的配置说明
+- 清晰的使用场景区分
+- 常见问题解答（FAQ）
+- 代码块和配置示例完整
 
-- **上游仓库**: `other-blowsnow/n8n-i18n-chinese`
-- **检测频率**: 每小时检查一次新 Release
-- **版本格式**: `n8n@1.115.3` → 提取为 `1.115.3`
+## AI 使用指引
 
-## 构建过程
+### 项目理解
+- 这是一个基于官方 n8n 的中文本地化 Docker 镜像项目
+- 核心价值在于自动化构建和简化部署
+- 目标用户是需要中文界面的 n8n 用户
 
-1. **版本检测**: 通过 GitHub API 获取上游最新 Release
-2. **资源下载**: 自动下载 editor-ui dist 文件包
-3. **多阶段构建**:
-   - Stage 1: Alpine 镜像持有中文 dist 文件
-   - Stage 2: 基于官方 n8n 镜像，集成中文语言包
-4. **镜像发布**: 推送到 Docker Hub，打上版本和 latest 标签
+### 开发指导
+- 优先考虑用户体验和部署简便性
+- 保持与上游项目的同步更新
+- 确保配置文件的安全性和可维护性
+- 提供详细的使用文档和故障排除指南
 
-## 生产部署注意事项
+### 修改建议
+- 修改 Docker 构建流程需测试多环境兼容性
+- 更新启动脚本需保持中英文版本一致性
+- 添加新功能需考虑向后兼容性
+- 文档更新需包含使用示例和故障排除
 
-- 使用 PostgreSQL 数据库而非默认 SQLite
-- 配置适当的安全认证和加密密钥
-- 设置正确的域名和 webhook URL
-- 启用工作流历史记录功能
-- 配置数据持久化卷
+## 相关链接
 
-## 监控和维护
+- **官方项目**: https://github.com/n8n-io/n8n
+- **上游中文包**: https://github.com/other-blowsnow/n8n-i18n-chinese
+- **Docker Hub 镜像**: https://hub.docker.com/r/lunare/n8n-chinese
+- **企业版镜像**: https://hub.docker.com/r/lunare/n8n-chinese-enterprise
 
-- GitHub Actions 提供构建日志和状态监控
-- Docker Hub 提供镜像下载统计
-- 定期检查上游仓库更新情况
-- 监控构建失败告警
+## 许可证
+
+本项目采用 MIT 许可证。

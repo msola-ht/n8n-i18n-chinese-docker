@@ -1,22 +1,202 @@
+# ===========================================
+# n8n-i18n-chinese-docker 项目 .gitignore
+# ===========================================
+
 # Claude 配置文件 - 不推送到仓库
 .claude/
 
+# ===========================================
+# Docker 相关忽略文件
+# ===========================================
 # 临时构建文件
 src-dist/
 Dockerfile
 
-# 日志文件
-*.log
+# Docker 相关临时文件
+.docker/
+docker-compose.override.yml
+docker-compose.local.yml
 
-# 系统文件
+# Docker 卷和数据
+.volumes/
+data/
+.n8n/
+
+# ===========================================
+# 操作系统相关
+# ===========================================
+# macOS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
 
-# IDE 文件
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.lnk
+
+# ===========================================
+# 编辑器和 IDE
+# ===========================================
+# VS Code
 .vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# JetBrains IDEs
 .idea/
+*.iws
+*.iml
+*.ipr
+
+# Vim
 *.swp
 *.swo
+*~
 
+# Emacs
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ===========================================
+# 运行时和日志
+# ===========================================
+# 日志文件
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# 进程文件
+*.pid
+*.seed
+*.pid.lock
+
+# 覆盖率报告
+coverage/
+*.lcov
+.nyc_output
+
+# ===========================================
+# 环境配置文件
+# ===========================================
+# 环境变量文件
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 配置文件
+config.local.js
+config.local.json
+
+# ===========================================
 # 依赖目录
+# ===========================================
+# Node.js
 node_modules/
+jspm_packages/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===========================================
+# 备份和临时文件
+# ===========================================
+# 备份文件
+*.bak
+*.backup
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# 压缩文件（通常是临时构建产物）
+*.tar.gz
+*.zip
+*.rar
+*.7z
+
+# ===========================================
+# 开发工具相关
+# ===========================================
+# Git 相关
+.gitattributes.merge
+.gitignore.rej
+.git/rebase-merge
+.git/rebase-apply
+
+# 测试相关
+test-results/
+playwright-report/
+test-results.xml
+
+# ===========================================
+# 项目特定忽略
+# ===========================================
+# 更新脚本的输出文件
+update-logs/
+version-*.txt
+
+# 临时脚本
+temp-*.bat
+temp-*.ps1
+temp-*.sh
+
+# 构建缓存
+.cache/
+.parcel-cache/
+
+# ===========================================
+# 但保留的重要文件（用 ! 取消忽略）
+# ===========================================
+# 保留示例配置文件
+!docker-compose*.yml
+!*.example
+!*.sample
+
+# 保留文档
+!README.md
+!CLAUDE.md
+!**/*.md
