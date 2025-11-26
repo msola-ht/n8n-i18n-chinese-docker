@@ -53,7 +53,10 @@ jobs:
           echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT"
           echo "检测到上游版本: ${N8N_VERSION}"
 
-      - name: 检查 Docker Hub 上的镜像是否存在
+      - name: 设置 Docker Buildx 用于多架构检查
+        uses: docker/setup-buildx-action@v3
+
+      - name: 检查 Docker Hub 上的多架构镜像是否存在
         id: check_images
         env:
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -61,29 +64,65 @@ jobs:
         run: |
           BUILD_COMMUNITY="false"
           BUILD_ENTERPRISE="false"
-          
+
+          # 检查社区版镜像
           COMMUNITY_IMAGE="${DOCKERHUB_USERNAME}/n8n-chinese"
           COMMUNITY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${COMMUNITY_IMAGE}/tags/${N8N_VERSION}")
           echo "检查社区版镜像 ${COMMUNITY_IMAGE}:${N8N_VERSION} -> 状态码: ${COMMUNITY_STATUS}"
+
           if [[ "${{ github.event.inputs.force_build_community }}" == "true" || "$COMMUNITY_STATUS" != "200" ]]; then
             BUILD_COMMUNITY="true"
+            echo "需要构建社区版镜像: 强制构建=${{ github.event.inputs.force_build_community }}, 镜像不存在=$([[ "$COMMUNITY_STATUS" != "200" ]] && echo true || echo false)"
+          else
+            # 如果镜像存在，进一步检查多架构支持
+            echo "正在检查社区版镜像的多架构支持..."
+            docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" 2>/dev/null && {
+              ARCHS=$(docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" --format "{{range .Manifest.Manifests}}{{.Platform}}{{end}}")
+              if [[ "$ARCHS" == *"linux/amd64"* && "$ARCHS" == *"linux/arm64"* ]]; then
+                echo "社区版镜像已支持 linux/amd64 和 linux/arm64 架构"
+              else
+                echo "社区版镜像架构不完整: $ARCHS"
+                BUILD_COMMUNITY="true"
+              fi
+            } || {
+              echo "无法检查社区版镜像架构，需要重新构建"
+              BUILD_COMMUNITY="true"
+            }
           fi
 
+          # 检查企业版镜像
           ENTERPRISE_IMAGE="${DOCKERHUB_USERNAME}/n8n-chinese-enterprise"
           ENTERPRISE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${ENTERPRISE_IMAGE}/tags/${N8N_VERSION}")
           echo "检查企业版镜像 ${ENTERPRISE_IMAGE}:${N8N_VERSION} -> 状态码: ${ENTERPRISE_STATUS}"
+
           if [[ "${{ github.event.inputs.force_build_enterprise }}" == "true" || "$ENTERPRISE_STATUS" != "200" ]]; then
             BUILD_ENTERPRISE="true"
+            echo "需要构建企业版镜像: 强制构建=${{ github.event.inputs.force_build_enterprise }}, 镜像不存在=$([[ "$ENTERPRISE_STATUS" != "200" ]] && echo true || echo false)"
+          else
+            # 如果镜像存在，进一步检查多架构支持
+            echo "正在检查企业版镜像的多架构支持..."
+            docker buildx imagetools inspect "${ENTERPRISE_IMAGE}:${N8N_VERSION}" 2>/dev/null && {
+              ARCHS=$(docker buildx imagetools inspect "${ENTERPRISE_IMAGE}:${N8N_VERSION}" --format "{{range .Manifest.Manifests}}{{.Platform}}{{end}}")
+              if [[ "$ARCHS" == *"linux/amd64"* && "$ARCHS" == *"linux/arm64"* ]]; then
+                echo "企业版镜像已支持 linux/amd64 和 linux/arm64 架构"
+              else
+                echo "企业版镜像架构不完整: $ARCHS"
+                BUILD_ENTERPRISE="true"
+              fi
+            } || {
+              echo "无法检查企业版镜像架构，需要重新构建"
+              BUILD_ENTERPRISE="true"
+            }
           fi
 
           echo "build_community=${BUILD_COMMUNITY}" >> "$GITHUB_OUTPUT"
           echo "build_enterprise=${BUILD_ENTERPRISE}" >> "$GITHUB_OUTPUT"
-          
+
           if [[ "$BUILD_COMMUNITY" == "true" || "$BUILD_ENTERPRISE" == "true" ]]; then
             echo "should_run_anything=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run_anything=false" >> "$GITHUB_OUTPUT"
-            echo "所有镜像均已存在且未强制构建，无需执行任何操作。"
+            echo "所有多架构镜像均已存在且未强制构建，无需执行任何操作。"
           fi
 
   build-and-push-community:
@@ -118,6 +157,7 @@ jobs:
           context: .
           file: ./Dockerfile.community
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:latest
@@ -125,6 +165,13 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             N8N_VERSION=${{ needs.check.outputs.n8n_version }}
+
+      - name: 输出社区版构建信息
+        run: |
+          echo "✅ 社区版镜像构建成功"
+          echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}"
+          echo "🏗️  支持架构: linux/amd64, linux/arm64"
+          echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese"
 
   build-and-push-enterprise:
     needs: [check, build-and-push-community]
@@ -179,11 +226,20 @@ jobs:
           context: .
           file: ./Dockerfile.enterprise
           push: true
+          platforms: linux/amd64,linux/arm64
           tags: |
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}
             ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: 输出企业版构建信息
+        run: |
+          echo "✅ 企业版镜像构建成功"
+          echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise:${{ needs.check.outputs.n8n_version }}"
+          echo "🏗️  支持架构: linux/amd64, linux/arm64"
+          echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise"
+          echo "🚀 企业版功能已全部启用"
 
   finalize_release:
     needs: [check, build-and-push-community, build-and-push-enterprise]
