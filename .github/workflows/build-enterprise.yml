@@ -77,11 +77,13 @@ jobs:
             # 如果镜像存在，进一步检查多架构支持
             echo "正在检查社区版镜像的多架构支持..."
             docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" 2>/dev/null && {
-              ARCHS=$(docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" --format "{{range .Manifest.Manifests}}{{.Platform}}{{end}}")
-              if [[ "$ARCHS" == *"linux/amd64"* && "$ARCHS" == *"linux/arm64"* ]]; then
+              HAS_AMD64=$(docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/amd64" && echo "true" || echo "false")
+              HAS_ARM64=$(docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/arm64" && echo "true" || echo "false")
+              echo "架构检查结果: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
+              if [[ "$HAS_AMD64" == "true" && "$HAS_ARM64" == "true" ]]; then
                 echo "社区版镜像已支持 linux/amd64 和 linux/arm64 架构"
               else
-                echo "社区版镜像架构不完整: $ARCHS"
+                echo "社区版镜像架构不完整: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
                 BUILD_COMMUNITY="true"
               fi
             } || {
@@ -102,11 +104,13 @@ jobs:
             # 如果镜像存在，进一步检查多架构支持
             echo "正在检查企业版镜像的多架构支持..."
             docker buildx imagetools inspect "${ENTERPRISE_IMAGE}:${N8N_VERSION}" 2>/dev/null && {
-              ARCHS=$(docker buildx imagetools inspect "${ENTERPRISE_IMAGE}:${N8N_VERSION}" --format "{{range .Manifest.Manifests}}{{.Platform}}{{end}}")
-              if [[ "$ARCHS" == *"linux/amd64"* && "$ARCHS" == *"linux/arm64"* ]]; then
+              HAS_AMD64=$(docker buildx imagetools inspect "${ENTERPRISE_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/amd64" && echo "true" || echo "false")
+              HAS_ARM64=$(docker buildx imagetools inspect "${ENTERPRISE_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/arm64" && echo "true" || echo "false")
+              echo "架构检查结果: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
+              if [[ "$HAS_AMD64" == "true" && "$HAS_ARM64" == "true" ]]; then
                 echo "企业版镜像已支持 linux/amd64 和 linux/arm64 架构"
               else
-                echo "企业版镜像架构不完整: $ARCHS"
+                echo "企业版镜像架构不完整: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
                 BUILD_ENTERPRISE="true"
               fi
             } || {
