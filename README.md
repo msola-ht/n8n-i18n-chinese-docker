@@ -37,14 +37,14 @@ docker run -d \
   -p 5678:5678 \
   -e N8N_DEFAULT_LOCALE=zh-CN \
   -e GENERIC_TIMEZONE=Asia/Shanghai \
-  lunare/n8n-chinese:1.123.4
+  lunare/n8n-chinese:1.123.5
 
 # 企业版
 docker run -d \
   -p 5678:5678 \
   -e N8N_DEFAULT_LOCALE=zh-CN \
   -e GENERIC_TIMEZONE=Asia/Shanghai \
-  lunare/n8n-chinese-enterprise:1.123.4
+  lunare/n8n-chinese-enterprise:1.123.5
 ```
 
 ## 📦 镜像信息
@@ -52,12 +52,12 @@ docker run -d \
 ### 社区版
 - **镜像**: `lunare/n8n-chinese`
 - **版本**: `1.122.5` / `latest`
-- **标签**: `docker pull lunare/n8n-chinese:1.123.4`
+- **标签**: `docker pull lunare/n8n-chinese:1.123.5`
 
 ### 企业版
 - **镜像**: `lunare/n8n-chinese-enterprise`
 - **版本**: `1.122.5` / `latest`
-- **标签**: `docker pull lunare/n8n-chinese-enterprise:1.123.4`
+- **标签**: `docker pull lunare/n8n-chinese-enterprise:1.123.5`
 
 ## 📁 项目结构
 
@@ -183,7 +183,7 @@ docker-win/
 ```yaml
 services:
   n8n:
-    image: lunare/n8n-chinese-enterprise:1.123.4  # 改为企业版镜像
+    image: lunare/n8n-chinese-enterprise:1.123.5  # 改为企业版镜像
 ```
 
 ## ❓ 常见问题
