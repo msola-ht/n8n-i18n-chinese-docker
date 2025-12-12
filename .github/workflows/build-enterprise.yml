@@ -170,12 +170,80 @@ jobs:
           build-args: |
             N8N_VERSION=${{ needs.check.outputs.n8n_version }}
 
+      - name: 导出社区版镜像
+        run: |
+          echo "📦 开始导出社区版镜像..."
+          # 创建导出目录
+          mkdir -p docker-images
+
+          # 拉取多架构镜像
+          docker pull ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
+
+          # 导出多架构镜像为 tar 文件
+          echo "正在导出镜像 ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}..."
+          docker save ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }} | \
+            gzip > "docker-images/n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz"
+
+          # 创建使用说明文件
+          cat <<EOF > docker-images/README.md
+# n8n 中文版 Docker 镜像
+
+## 镜像信息
+- **版本**: ${{ needs.check.outputs.n8n_version }}
+- **镜像**: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
+- **架构**: linux/amd64, linux/arm64
+
+## 导入镜像
+
+1. 将镜像文件下载到本地
+2. 解压并导入镜像：
+   \`\`\`bash
+   gunzip -c n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz | docker load
+   \`\`\`
+
+## 运行容器
+
+\`\`\`bash
+docker run -d --name n8n \
+  -p 5678:5678 \
+  -v n8n_data:/home/node/.n8n \
+  ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
+\`\`\`
+
+## 更多信息
+
+- 项目主页: https://github.com/msola-ht/n8n-i18n-chinese-docker
+- Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese
+EOF
+
+          # 生成镜像信息文件
+          cat <<EOF > docker-images/image-info.json
+{
+  "version": "${{ needs.check.outputs.n8n_version }}",
+  "image": "${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}",
+  "platforms": ["linux/amd64", "linux/arm64"],
+  "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "upstream_tag": "${{ needs.check.outputs.tag }}"
+}
+EOF
+
+          echo "::notice::镜像已导出为: docker-images/n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz"
+          echo "::notice::镜像大小: $(du -h docker-images/n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz | cut -f1)"
+
+      - name: 上传镜像归档到 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: n8n-chinese-image-${{ needs.check.outputs.n8n_version }}
+          path: docker-images/
+          retention-days: 30
+
       - name: 输出社区版构建信息
         run: |
           echo "✅ 社区版镜像构建成功"
           echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}"
           echo "🏗️  支持架构: linux/amd64, linux/arm64"
           echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese"
+          echo "💾 镜像归档: 已上传到 GitHub Actions Artifacts"
 
   build-and-push-enterprise:
     needs: [check, build-and-push-community]
@@ -275,3 +343,94 @@ jobs:
             git tag "${UPSTREAM_TAG}"
             git push origin "${UPSTREAM_TAG}"
           fi
+
+  create_release:
+    needs: [check, build-and-push-community]
+    # 只有在构建社区版成功时才执行
+    if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v3
+
+      - name: 下载镜像归档
+        uses: actions/download-artifact@v4
+        with:
+          name: n8n-chinese-image-${{ needs.check.outputs.n8n_version }}
+          path: docker-images/
+
+      - name: 检查文件
+        run: |
+          echo "下载的文件："
+          ls -la docker-images/
+
+      - name: 创建或更新 GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N8N_VERSION: ${{ needs.check.outputs.n8n_version }}
+          UPSTREAM_TAG: ${{ needs.check.outputs.tag }}
+          DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          # 检查是否已存在 Release
+          if gh release view "${UPSTREAM_TAG}" --json title --jq .title 2>/dev/null; then
+            echo "Release ${UPSTREAM_TAG} 已存在，更新资产..."
+
+            # 删除旧的镜像文件（如果存在）
+            OLD_ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | startswith("n8n-chinese-")) | .name')
+            if [ -n "$OLD_ASSETS" ]; then
+              echo "$OLD_ASSETS" | xargs -I {} gh release delete-asset "${UPSTREAM_TAG}" "{}" --yes
+            fi
+
+            # 上传新的镜像文件
+            gh release upload "${UPSTREAM_TAG}" \
+              "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" \
+              "docker-images/README.md" \
+              "docker-images/image-info.json"
+          else
+            echo "创建新的 Release ${UPSTREAM_TAG}..."
+
+            # 创建 Release
+            gh release create "${UPSTREAM_TAG}" \
+              "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" \
+              "docker-images/README.md" \
+              "docker-images/image-info.json" \
+              --title "n8n 中文版 v${N8N_VERSION}" \
+              --notes "## n8n 中文版 Docker 镜像
+
+版本：${N8N_VERSION}
+镜像：${DOCKER_USER}/n8n-chinese:${N8N_VERSION}
+
+### 新增功能
+- 🐳 完整的中文界面支持
+- 🏗️ 多架构支持（linux/amd64, linux/arm64）
+- 📦 Docker 镜像离线导入包
+- 🚀 开箱即用的中文环境
+
+### 使用方法
+
+#### 从 Docker Hub 拉取
+\`\`\`bash
+docker run -d --name n8n \
+  -p 5678:5678 \
+  -v n8n_data:/home/node/.n8n \
+  ${DOCKER_USER}/n8n-chinese:${N8N_VERSION}
+\`\`\`
+
+#### 离线导入（下载下方 tar.gz 文件）
+1. 下载 n8n-chinese-${N8N_VERSION}.tar.gz
+2. 解压并导入镜像：
+   \`\`\`bash
+   gunzip -c n8n-chinese-${N8N_VERSION}.tar.gz | docker load
+   \`\`\`
+
+### 更多信息
+- 项目主页：https://github.com/msola-ht/n8n-i18n-chinese-docker
+- Docker Hub：https://hub.docker.com/r/${DOCKER_USER}/n8n-chinese
+- 上游项目：https://github.com/other-blowsnow/n8n-i18n-chinese
+"
+          fi
+
+          echo "✅ Release ${UPSTREAM_TAG} 已更新完成"
