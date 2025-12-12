@@ -173,60 +173,35 @@ jobs:
       - name: 导出社区版镜像
         run: |
           echo "📦 开始导出社区版镜像..."
-          # 创建导出目录
           mkdir -p docker-images
-
-          # 拉取多架构镜像
           docker pull ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
-
-          # 导出多架构镜像为 tar 文件
           echo "正在导出镜像 ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}..."
           docker save ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }} | \
             gzip > "docker-images/n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz"
 
-          # 创建使用说明文件
-          cat <<EOF > docker-images/README.md
-# n8n 中文版 Docker 镜像
+      - name: 创建文档
+        run: |
+          # 使用 printf 创建 README 文件，避免 heredoc 问题
+          printf '# n8n 中文版 Docker 镜像\n\n## 镜像信息\n- 版本: %s\n- 镜像: %s\n- 架构: linux/amd64, linux/arm64\n\n## 导入镜像\n\n1. 将镜像文件下载到本地\n2. 解压并导入镜像：\n   ```bash\n   gunzip -c n8n-chinese-%s.tar.gz | docker load\n   ```\n\n## 运行容器\n\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s\n```\n\n## 更多信息\n\n- 项目主页: https://github.com/msola-ht/n8n-i18n-chinese-docker\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese\n' \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}" \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}" \
+            "${{ env.DOCKERHUB_USERNAME }}" \
+            > docker-images/README.md
 
-## 镜像信息
-- **版本**: ${{ needs.check.outputs.n8n_version }}
-- **镜像**: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
-- **架构**: linux/amd64, linux/arm64
+      - name: 生成镜像信息
+        run: |
+          echo '{' > docker-images/image-info.json
+          echo '  "version": "${{ needs.check.outputs.n8n_version }}",' >> docker-images/image-info.json
+          echo '  "image": "${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}",' >> docker-images/image-info.json
+          echo '  "platforms": ["linux/amd64", "linux/arm64"],' >> docker-images/image-info.json
+          echo '  "build_date": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",' >> docker-images/image-info.json
+          echo '  "upstream_tag": "${{ needs.check.outputs.tag }}"' >> docker-images/image-info.json
+          echo '}' >> docker-images/image-info.json
 
-## 导入镜像
-
-1. 将镜像文件下载到本地
-2. 解压并导入镜像：
-   \`\`\`bash
-   gunzip -c n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz | docker load
-   \`\`\`
-
-## 运行容器
-
-\`\`\`bash
-docker run -d --name n8n \
-  -p 5678:5678 \
-  -v n8n_data:/home/node/.n8n \
-  ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
-\`\`\`
-
-## 更多信息
-
-- 项目主页: https://github.com/msola-ht/n8n-i18n-chinese-docker
-- Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese
-EOF
-
-          # 生成镜像信息文件
-          cat <<EOF > docker-images/image-info.json
-{
-  "version": "${{ needs.check.outputs.n8n_version }}",
-  "image": "${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}",
-  "platforms": ["linux/amd64", "linux/arm64"],
-  "build_date": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-  "upstream_tag": "${{ needs.check.outputs.tag }}"
-}
-EOF
-
+      - name: 输出导出信息
+        run: |
           echo "::notice::镜像已导出为: docker-images/n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz"
           echo "::notice::镜像大小: $(du -h docker-images/n8n-chinese-${{ needs.check.outputs.n8n_version }}.tar.gz | cut -f1)"
 
@@ -393,44 +368,21 @@ EOF
             echo "创建新的 Release ${UPSTREAM_TAG}..."
 
             # 创建 Release
+            NOTES_FILE="/tmp/release-notes.txt"
+            printf '## n8n 中文版 Docker 镜像\n\n版本：%s\n镜像：%s/n8n-chinese:%s\n\n### 新增功能\n- 🐳 完整的中文界面支持\n- 🏗️ 多架构支持（linux/amd64, linux/arm64）\n- 📦 Docker 镜像离线导入包\n- 🚀 开箱即用的中文环境\n\n### 使用方法\n\n#### 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese:%s\n```\n\n#### 离线导入（下载下方 tar.gz 文件）\n1. 下载 n8n-chinese-%s.tar.gz\n2. 解压并导入镜像：\n   ```bash\n   gunzip -c n8n-chinese-%s.tar.gz | docker load\n   ```\n\n### 更多信息\n- 项目主页：https://github.com/msola-ht/n8n-i18n-chinese-docker\n- Docker Hub：https://hub.docker.com/r/%s/n8n-chinese\n- 上游项目：https://github.com/other-blowsnow/n8n-i18n-chinese' \
+              "${N8N_VERSION}" \
+              "${DOCKER_USER}" "${N8N_VERSION}" \
+              "${DOCKER_USER}" "${N8N_VERSION}" \
+              "${N8N_VERSION}" "${N8N_VERSION}" \
+              "${DOCKER_USER}" \
+              > "${NOTES_FILE}"
+
             gh release create "${UPSTREAM_TAG}" \
               "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" \
               "docker-images/README.md" \
               "docker-images/image-info.json" \
               --title "n8n 中文版 v${N8N_VERSION}" \
-              --notes "## n8n 中文版 Docker 镜像
-
-版本：${N8N_VERSION}
-镜像：${DOCKER_USER}/n8n-chinese:${N8N_VERSION}
-
-### 新增功能
-- 🐳 完整的中文界面支持
-- 🏗️ 多架构支持（linux/amd64, linux/arm64）
-- 📦 Docker 镜像离线导入包
-- 🚀 开箱即用的中文环境
-
-### 使用方法
-
-#### 从 Docker Hub 拉取
-\`\`\`bash
-docker run -d --name n8n \
-  -p 5678:5678 \
-  -v n8n_data:/home/node/.n8n \
-  ${DOCKER_USER}/n8n-chinese:${N8N_VERSION}
-\`\`\`
-
-#### 离线导入（下载下方 tar.gz 文件）
-1. 下载 n8n-chinese-${N8N_VERSION}.tar.gz
-2. 解压并导入镜像：
-   \`\`\`bash
-   gunzip -c n8n-chinese-${N8N_VERSION}.tar.gz | docker load
-   \`\`\`
-
-### 更多信息
-- 项目主页：https://github.com/msola-ht/n8n-i18n-chinese-docker
-- Docker Hub：https://hub.docker.com/r/${DOCKER_USER}/n8n-chinese
-- 上游项目：https://github.com/other-blowsnow/n8n-i18n-chinese
-"
+              --notes-file "${NOTES_FILE}"
           fi
 
           echo "✅ Release ${UPSTREAM_TAG} 已更新完成"
