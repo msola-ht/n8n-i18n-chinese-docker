@@ -306,8 +306,12 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git fetch --tags
+          # 更新镜像标签中的版本号
           sed -i "s|${DOCKER_USER}/n8n-chinese:[0-9.]*|${DOCKER_USER}/n8n-chinese:${NEW_VERSION}|g" README.md
           sed -i "s|${DOCKER_USER}/n8n-chinese-enterprise:[0-9.]*|${DOCKER_USER}/n8n-chinese-enterprise:${NEW_VERSION}|g" README.md
+
+          # 更新版本号文本
+          perl -i -pe 's/^- (\*\*版本\*\*: `)[0-9.]+(`)/$1'${NEW_VERSION}'$2/g' README.md
           
           git add README.md
           if ! git diff --staged --quiet; then
