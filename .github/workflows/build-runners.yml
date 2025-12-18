@@ -10,35 +10,37 @@ on:
         default: false
 
 jobs:
-  build-and-push-runners:
+  check:
     runs-on: ubuntu-latest
-    steps:
-      - name: 拉取代码
-        uses: actions/checkout@v3
+    outputs:
+      runners_version: ${{ steps.get_version.outputs.runners_version }}
+      should_build: ${{ steps.check.outputs.should_build }}
 
-      - name: 设置 Docker Hub 用户名
-        run: echo "DOCKERHUB_USERNAME=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | xargs)" >> "$GITHUB_ENV"
+    steps:
+      - name: 拉取当前仓库代码
+        uses: actions/checkout@v3
 
       - name: 获取 runners 版本
         id: get_version
         run: |
           # 从 Dockerfile 中提取版本
           RUNNERS_VERSION=$(grep "FROM n8nio/runners:" runners/Dockerfile | cut -d':' -f2)
-          echo "RUNNERS_VERSION=$RUNNERS_VERSION" >> "$GITHUB_ENV"
           echo "runners_version=$RUNNERS_VERSION" >> "$GITHUB_OUTPUT"
           echo "检测到 runners 版本: ${RUNNERS_VERSION}"
 
-      - name: 设置 Docker Buildx
+      - name: 设置 Docker Buildx 用于多架构检查
         uses: docker/setup-buildx-action@v3
 
       - name: 检查 Docker Hub 上的多架构镜像是否存在
+        id: check
         env:
-          RUNNERS_VERSION: ${{ env.RUNNERS_VERSION }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          RUNNERS_VERSION: ${{ steps.get_version.outputs.runners_version }}
         run: |
           SHOULD_BUILD="false"
 
           # 检查 runners 镜像
-          RUNNERS_IMAGE="${{ env.DOCKERHUB_USERNAME }}/n8n-runners"
+          RUNNERS_IMAGE="${DOCKERHUB_USERNAME}/n8n-runners"
           RUNNERS_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${RUNNERS_IMAGE}/tags/${RUNNERS_VERSION}")
           echo "检查 runners 镜像 ${RUNNERS_IMAGE}:${RUNNERS_VERSION} -> 状态码: ${RUNNERS_STATUS}"
 
@@ -64,7 +66,18 @@ jobs:
             }
           fi
 
-          echo "SHOULD_BUILD=${SHOULD_BUILD}" >> "$GITHUB_ENV"
+          echo "should_build=${SHOULD_BUILD}" >> "$GITHUB_OUTPUT"
+
+  build-and-push:
+    needs: check
+    if: needs.check.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v3
+
+      - name: 设置 Docker Hub 用户名
+        run: echo "DOCKERHUB_USERNAME=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | xargs)" >> "$GITHUB_ENV"
 
       - name: 登录到 Docker Hub
         uses: docker/login-action@v3
@@ -72,39 +85,44 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: 构建并推送 Task Runners 镜像
-        if: env.SHOULD_BUILD == 'true'
         uses: docker/build-push-action@v5
         with:
           context: ./runners
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:${{ steps.get_version.outputs.runners_version }}
-            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:latest
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:${{ needs.check.outputs.runners_version }}
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
             org.opencontainers.image.title=n8n Task Runners
             org.opencontainers.image.description=n8n task runners with Playwright support
-            org.opencontainers.image.version=${{ env.RUNNERS_VERSION }}
+            org.opencontainers.image.version=${{ needs.check.outputs.runners_version }}
             org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.licenses=MIT
 
       - name: 输出构建信息
-        if: env.SHOULD_BUILD == 'true'
         run: |
           echo "✅ Task Runners 镜像构建成功"
-          echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:${{ env.RUNNERS_VERSION }}"
+          echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:${{ needs.check.outputs.runners_version }}"
           echo "🏗️  支持架构: linux/amd64, linux/arm64"
           echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-runners"
           echo "🎭 包含 Playwright 1.56.0 支持"
 
+  skip-build:
+    needs: check
+    if: needs.check.outputs.should_build == 'false'
+    runs-on: ubuntu-latest
+    steps:
       - name: 镜像已存在，跳过构建
-        if: env.SHOULD_BUILD == 'false'
         run: |
           echo "✅ 镜像已存在且支持多架构，跳过构建"
-          echo "📦 镜像: ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:${{ env.RUNNERS_VERSION }}"
-          echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-runners"
+          echo "📦 镜像: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:${{ needs.check.outputs.runners_version }}"
+          echo "🔗 Docker Hub: https://hub.docker.com/r/${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners"
