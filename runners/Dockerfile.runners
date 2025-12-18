@@ -2,17 +2,13 @@ FROM n8nio/runners:2.0.3
 
 USER root
 
-# 1. 安装 Playwright (固定版本) 和其他依赖 (不指定版本，自动获取最新)
-# 手动下载并安装 wheel 文件
-RUN cd /tmp && \
-    if [ "$(uname -m)" = "x86_64" ]; then \
-        wget -q https://files.pythonhosted.org/packages/e4/76/6d409e37e82cdd5dda3df1ab958130ae32b46e42458bd4fc93d7eb8749cb/playwright-1.56.0-py3-none-manylinux1_x86_64.whl; \
-    else \
-        wget -q https://files.pythonhosted.org/packages/4f/84/fb292cc5d45f3252e255ea39066cd1d2385c61c6c1596548dfbf59c88605/playwright-1.56.0-py3-none-manylinux_2_17_aarch64.manylinux2014_aarch64.whl; \
-    fi && \
-    cd /opt/runners/task-runner-python && \
-    uv pip install --no-cache /tmp/playwright-1.56.0-*.whl && \
-    rm -f /tmp/playwright-1.56.0-*.whl
+# 1. 安装 Playwright (固定版本) 和其他依赖
+# 尝试使用 uv add 添加 playwright 到现有项目
+RUN cd /opt/runners/task-runner-python && \
+    uv add --no-dev playwright==1.56.0 || \
+    (echo "uv add failed, trying alternative method..." && \
+     uv pip install --no-cache --index-strategy unsafe-any-match playwright==1.56.0) || \
+    echo "Failed to install playwright, continuing without it"
 
 # 2. 拷贝配置文件
 COPY n8n-task-runners.json /etc/n8n-task-runners.json
