@@ -20,13 +20,13 @@ jobs:
       - name: 拉取当前仓库代码
         uses: actions/checkout@v3
 
-      - name: 获取 runners 版本
+      - name: 设置 runners 版本
         id: get_version
         run: |
-          # 从 Dockerfile 中提取版本
-          RUNNERS_VERSION=$(grep "FROM n8nio/runners:" runners/Dockerfile | cut -d':' -f2)
+          # 固定版本
+          RUNNERS_VERSION="2.0.3"
           echo "runners_version=$RUNNERS_VERSION" >> "$GITHUB_OUTPUT"
-          echo "检测到 runners 版本: ${RUNNERS_VERSION}"
+          echo "设置 runners 版本: ${RUNNERS_VERSION}"
 
       - name: 设置 Docker Buildx 用于多架构检查
         uses: docker/setup-buildx-action@v3
