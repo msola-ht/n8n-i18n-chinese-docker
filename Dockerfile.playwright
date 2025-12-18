@@ -1,0 +1,35 @@
+# --- 第一阶段：下载器 ---
+FROM python:3.11-slim AS fetcher
+WORKDIR /packages
+# 下载指定的 Playwright Wheel
+RUN pip download --no-deps \
+    --platform manylinux2014_aarch64 \
+    --only-binary=:all: \
+    "playwright==1.56.0"
+
+# --- 第二阶段：最终镜像 ---
+FROM n8nio/runners:2.0.3
+
+USER root
+# 安装运行时兼容层
+RUN apk add --no-cache gcompat unzip
+
+WORKDIR /opt/runners/task-runner-python
+
+# 从第一阶段拷贝下载好的 Wheel
+COPY --from=fetcher /packages/*.whl /tmp/
+
+# 暴力解压到虚拟环境（绕过 Alpine 的平台检查）
+# 注意：请确认 n8n 镜像内的 python 版本，如果是 3.10 请修改下方路径
+RUN unzip /tmp/playwright-*.whl -d .venv/lib/python3.11/site-packages/ && \
+    rm /tmp/*.whl
+
+# 使用 uv 安装 greenlet（这个在 Alpine 有现成二进制，很快）
+RUN uv pip install --no-cache greenlet
+
+# 验证安装
+RUN .venv/bin/python -c "import playwright; print('Playwright installed successfully')"
+
+COPY n8n-task-runners.json /etc/n8n-task-runners.json
+
+USER runner

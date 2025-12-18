@@ -27,6 +27,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: ./Dockerfile.playwright
           platforms: linux/arm64,linux/amd64  # 同时构建 ARM64 和 x64 镜像
           push: true
           tags: |
