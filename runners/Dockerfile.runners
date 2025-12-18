@@ -3,17 +3,10 @@ FROM n8nio/runners:2.0.3
 USER root
 
 # 1. 安装 Playwright (固定版本) 和其他依赖 (不指定版本，自动获取最新)
-# 根据架构安装正确的版本
+# uv 会自动选择正确的平台 wheel
 RUN cd /opt/runners/task-runner-python && \
-    if [ "$(uname -m)" = "x86_64" ]; then \
-        uv pip install --no-cache \
-        --platform manylinux1_x86_64 \
-        playwright==1.56.0; \
-    else \
-        uv pip install --no-cache \
-        --platform manylinux_2_17_aarch64 \
-        playwright==1.56.0; \
-    fi
+    uv pip install --no-cache \
+    playwright==1.56.0
 
 # 2. 拷贝配置文件
 COPY n8n-task-runners.json /etc/n8n-task-runners.json
