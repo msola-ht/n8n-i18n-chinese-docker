@@ -5,7 +5,7 @@ USER root
 # 1. 安装 Playwright (固定版本) 和其他依赖 (不指定版本，自动获取最新)
 RUN cd /opt/runners/task-runner-python && \
     uv pip install --no-cache \
-    playwright==1.56.0 \
+    playwright==1.56.0
 
 # 2. 拷贝配置文件
 COPY n8n-task-runners.json /etc/n8n-task-runners.json
