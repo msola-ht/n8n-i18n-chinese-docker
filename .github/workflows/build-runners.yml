@@ -92,6 +92,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./runners
+          file: ./runners/Dockerfile.runners
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
