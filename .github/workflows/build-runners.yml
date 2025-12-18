@@ -78,8 +78,8 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:${{ env.RUNNERS_VERSION }}
-            ${{ env.DOCKERHUB_USERNAME }}/n8n-runners:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:${{ env.RUNNERS_VERSION }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           labels: |
