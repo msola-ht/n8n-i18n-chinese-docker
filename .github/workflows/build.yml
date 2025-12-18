@@ -1,0 +1,34 @@
+name: Build n8n Playwright Runner
+
+on:
+  push:
+    branches: [ "main" ]  # 当你向 main 分支推送代码时触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          platforms: linux/arm64,linux/amd64  # 同时构建 ARM64 和 x64 镜像
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runner-python-playwright:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runner-python-playwright:2.0.3
