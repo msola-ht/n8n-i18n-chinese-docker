@@ -20,10 +20,12 @@ jobs:
         run: echo "DOCKERHUB_USERNAME=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | xargs)" >> "$GITHUB_ENV"
 
       - name: 获取 runners 版本
+        id: get_version
         run: |
           # 从 Dockerfile 中提取版本
           RUNNERS_VERSION=$(grep "FROM n8nio/runners:" runners/Dockerfile | cut -d':' -f2)
           echo "RUNNERS_VERSION=$RUNNERS_VERSION" >> "$GITHUB_ENV"
+          echo "runners_version=$RUNNERS_VERSION" >> "$GITHUB_OUTPUT"
           echo "检测到 runners 版本: ${RUNNERS_VERSION}"
 
       - name: 设置 Docker Buildx
@@ -78,7 +80,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:${{ env.RUNNERS_VERSION }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:${{ steps.get_version.outputs.runners_version }}
             ${{ secrets.DOCKERHUB_USERNAME }}/n8n-runners:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
