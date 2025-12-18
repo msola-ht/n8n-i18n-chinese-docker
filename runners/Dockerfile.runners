@@ -3,8 +3,9 @@ FROM n8nio/runners:2.0.3
 USER root
 
 # 1. 安装 Playwright (固定版本) 和其他依赖 (不指定版本，自动获取最新)
-# uv 会自动选择正确的平台 wheel
+# 设置环境变量允许使用 older manylinux
 RUN cd /opt/runners/task-runner-python && \
+    UV_MANYLINUX_COMPATIBLE=1 \
     uv pip install --no-cache \
     playwright==1.56.0
 
