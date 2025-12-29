@@ -357,19 +357,19 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
           git fetch --tags
-          # 更新镜像标签中的版本号
-          sed -i "s|${DOCKER_USER}/n8n-chinese:[0-9.]*|${DOCKER_USER}/n8n-chinese:${NEW_VERSION}|g" README.md
-          sed -i "s|${DOCKER_USER}/n8n-chinese-enterprise:[0-9.]*|${DOCKER_USER}/n8n-chinese-enterprise:${NEW_VERSION}|g" README.md
+          # 更新镜像标签中的版本号（只更新带版本号的，不影响 latest）
+          sed -i "s|${DOCKER_USER}/n8n-chinese:[0-9]\+\.[0-9]\+\.[0-9]\+|${DOCKER_USER}/n8n-chinese:${NEW_VERSION}|g" README.md
+          sed -i "s|${DOCKER_USER}/n8n-chinese-enterprise:[0-9]\+\.[0-9]\+\.[0-9]\+|${DOCKER_USER}/n8n-chinese-enterprise:${NEW_VERSION}|g" README.md
 
           # 更新版本号文本
           sed -i 's/\*\*当前版本\*\*: `[0-9.]*`/**当前版本**: `'${NEW_VERSION}'`/g' README.md
 
           # 更新镜像信息表格中的版本号
-          sed -i 's/`latest` 或 `[0-9.]*`/`latest` 或 `'${NEW_VERSION}'`/g' README.md
+          sed -i 's/或 `[0-9]\+\.[0-9]\+\.[0-9]\+`/或 `'${NEW_VERSION}'`/g' README.md
 
           # 更新离线下载文件名中的版本号
-          sed -i 's/n8n-chinese-[0-9.]*\.tar.gz/n8n-chinese-'${NEW_VERSION}'.tar.gz/g' README.md
-          sed -i 's/n8n-chinese-enterprise-[0-9.]*\.tar.gz/n8n-chinese-enterprise-'${NEW_VERSION}'.tar.gz/g' README.md
+          sed -i 's/n8n-chinese-[0-9]\+\.[0-9]\+\.[0-9]\+\.tar.gz/n8n-chinese-'${NEW_VERSION}'.tar.gz/g' README.md
+          sed -i 's/n8n-chinese-enterprise-[0-9]\+\.[0-9]\+\.[0-9]\+\.tar.gz/n8n-chinese-enterprise-'${NEW_VERSION}'.tar.gz/g' README.md
 
           git add README.md
           if ! git diff --staged --quiet; then
