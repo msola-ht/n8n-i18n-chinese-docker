@@ -4,12 +4,11 @@
 [![Docker Pulls](https://img.shields.io/docker/pulls/lunare/n8n-chinese.svg)](https://hub.docker.com/r/lunare/n8n-chinese)
 [![Docker Pulls Enterprise](https://img.shields.io/docker/pulls/lunare/n8n-chinese-enterprise.svg)](https://hub.docker.com/r/lunare/n8n-chinese-enterprise)
 
-自动构建包含完整中文语言包和 FFmpeg 支持的 n8n Docker 镜像
+自动构建包含完整中文语言包的 n8n Docker 镜像
 
 ## 特性
 
 - 🇨🇳 完整中文界面
-- 🎬 预装 FFmpeg
 - 🏦 企业版支持（仅供学习测试）
 - 📦 提供离线镜像下载
 - 🏗️ 多架构支持（linux/amd64, linux/arm64）
