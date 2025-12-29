@@ -402,8 +402,7 @@ jobs:
           readme-filepath: README.md
 
   create_release:
-    needs: [check, build-and-push-community, build-and-push-enterprise]
-    # 社区版构建成功时执行，企业版可选
+    needs: [check, build-and-push-community]
     if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -421,7 +420,7 @@ jobs:
 
       - name: 下载企业版镜像归档（如果存在）
         uses: actions/download-artifact@v4
-        if: needs.build-and-push-enterprise.result == 'success'
+        continue-on-error: true
         with:
           name: n8n-chinese-enterprise-image-${{ needs.check.outputs.n8n_version }}
           path: docker-images-enterprise/
@@ -432,7 +431,11 @@ jobs:
           ls -la docker-images/
           echo ""
           echo "下载的企业版文件："
-          ls -la docker-images-enterprise/
+          if [ -d "docker-images-enterprise" ]; then
+            ls -la docker-images-enterprise/
+          else
+            echo "企业版文件不存在"
+          fi
 
       - name: 创建或更新 GitHub Release
         env:
@@ -454,9 +457,9 @@ jobs:
           ENTERPRISE_FILES_EXIST=false
           if [ -f "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" ]; then
             ENTERPRISE_FILES_EXIST=true
-            echo "企业版文件存在，将包含在 Release 中"
+            echo "✅ 企业版文件存在，将包含在 Release 中"
           else
-            echo "企业版文件不存在，仅发布社区版"
+            echo "⚠️ 企业版文件不存在，仅发布社区版"
           fi
 
           if [ "$RELEASE_EXISTS" = true ]; then
