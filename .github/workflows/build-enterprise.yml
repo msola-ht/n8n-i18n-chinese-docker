@@ -242,20 +242,20 @@ jobs:
 
           # 2. 生成 Dockerfile (使用 COPY 指令而不是内部生成)
           cat <<EOF > Dockerfile.enterprise
-          FROM ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
+          FROM $DOCKERHUB_USERNAME/n8n-chinese:${{ needs.check.outputs.n8n_version }}
           USER root
-          
+
           # 将上面生成的 JS 文件复制到镜像中
           COPY enterprise-mock.js /tmp/enterprise-mock.js
-          
+
           ENV TARGET_FILE=/usr/local/lib/node_modules/n8n/dist/commands/base-command.js
-          
+
           # 执行注入逻辑
           RUN set -e; \
               awk '/^exports\.BaseCommand = BaseCommand;$/{system("cat /tmp/enterprise-mock.js")}1' \${TARGET_FILE} > \${TARGET_FILE}.tmp; \
               mv \${TARGET_FILE}.tmp \${TARGET_FILE}; \
               rm /tmp/enterprise-mock.js;
-          
+
           USER node
           EOF
           
