@@ -362,22 +362,29 @@ jobs:
           sed -i "s|${DOCKER_USER}/n8n-chinese-enterprise:[0-9.]*|${DOCKER_USER}/n8n-chinese-enterprise:${NEW_VERSION}|g" README.md
 
           # 更新版本号文本
-          perl -i -pe 's/^- (\*\*版本\*\*: `)[0-9.]+(`)/$1'${NEW_VERSION}'$2/g' README.md
-          
+          sed -i 's/\*\*当前版本\*\*: `[0-9.]*`/**当前版本**: `'${NEW_VERSION}'`/g' README.md
+
+          # 更新镜像信息表格中的版本号
+          sed -i 's/`latest` 或 `[0-9.]*`/`latest` 或 `'${NEW_VERSION}'`/g' README.md
+
+          # 更新离线下载文件名中的版本号
+          sed -i 's/n8n-chinese-[0-9.]*\.tar.gz/n8n-chinese-'${NEW_VERSION}'.tar.gz/g' README.md
+          sed -i 's/n8n-chinese-enterprise-[0-9.]*\.tar.gz/n8n-chinese-enterprise-'${NEW_VERSION}'.tar.gz/g' README.md
+
           git add README.md
           if ! git diff --staged --quiet; then
             git commit -m "ci: 自动更新版本标签至 ${NEW_VERSION}"
             git pull --rebase
             git push
           fi
-          
+
           if ! git rev-parse -q --verify "refs/tags/${UPSTREAM_TAG}"; then
             git tag "${UPSTREAM_TAG}"
             git push origin "${UPSTREAM_TAG}"
           fi
 
       - name: 同步 README 到 Docker Hub（社区版）
-        uses: docker/hub-description-sync-action@v1
+        uses: peter-evans/dockerhub-description@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -386,7 +393,7 @@ jobs:
           readme: README.md
 
       - name: 同步 README 到 Docker Hub（企业版）
-        uses: docker/hub-description-sync-action@v1
+        uses: peter-evans/dockerhub-description@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -396,8 +403,8 @@ jobs:
 
   create_release:
     needs: [check, build-and-push-community, build-and-push-enterprise]
-    # 在社区版和企业版都构建成功时才执行
-    if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success' && needs.build-and-push-enterprise.result == 'success'
+    # 社区版构建成功时执行，企业版可选
+    if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -412,8 +419,9 @@ jobs:
           name: n8n-chinese-image-${{ needs.check.outputs.n8n_version }}
           path: docker-images/
 
-      - name: 下载企业版镜像归档
+      - name: 下载企业版镜像归档（如果存在）
         uses: actions/download-artifact@v4
+        if: needs.build-and-push-enterprise.result == 'success'
         with:
           name: n8n-chinese-enterprise-image-${{ needs.check.outputs.n8n_version }}
           path: docker-images-enterprise/
@@ -442,6 +450,15 @@ jobs:
             echo "Release ${UPSTREAM_TAG} 不存在，将创建新 Release..."
           fi
 
+          # 检查企业版文件是否存在
+          ENTERPRISE_FILES_EXIST=false
+          if [ -f "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" ]; then
+            ENTERPRISE_FILES_EXIST=true
+            echo "企业版文件存在，将包含在 Release 中"
+          else
+            echo "企业版文件不存在，仅发布社区版"
+          fi
+
           if [ "$RELEASE_EXISTS" = true ]; then
             # 删除旧的镜像文件（如果存在）
             OLD_ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | startswith("n8n-chinese-")) | .name' 2>/dev/null || echo "")
@@ -451,14 +468,20 @@ jobs:
               done
             fi
 
-            # 上传新的镜像文件（社区版 + 企业版）
+            # 上传新的镜像文件
+            echo "上传社区版文件..."
             gh release upload "${UPSTREAM_TAG}" \
               "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" \
               "docker-images/README.md" \
-              "docker-images/image-info.json" \
-              "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" \
-              "docker-images-enterprise/README.md" \
-              "docker-images-enterprise/image-info.json" || echo "部分资产上传失败，可能已存在"
+              "docker-images/image-info.json" || echo "社区版资产上传失败"
+
+            if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
+              echo "上传企业版文件..."
+              gh release upload "${UPSTREAM_TAG}" \
+                "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" \
+                "docker-images-enterprise/README.md" \
+                "docker-images-enterprise/image-info.json" || echo "企业版资产上传失败"
+            fi
           else
             echo "创建新的 Release ${UPSTREAM_TAG}..."
 
@@ -474,18 +497,34 @@ jobs:
               "${N8N_VERSION}" "${N8N_VERSION}" \
               > "${NOTES_FILE}"
 
+            # 构建上传文件列表
+            UPLOAD_FILES=(
+              "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz"
+              "docker-images/README.md"
+              "docker-images/image-info.json"
+            )
+
+            if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
+              UPLOAD_FILES+=(
+                "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz"
+                "docker-images-enterprise/README.md"
+                "docker-images-enterprise/image-info.json"
+              )
+            fi
+
+            # 创建 Release 并上传文件
             gh release create "${UPSTREAM_TAG}" \
-              "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" \
-              "docker-images/README.md" \
-              "docker-images/image-info.json" \
-              "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" \
-              "docker-images-enterprise/README.md" \
-              "docker-images-enterprise/image-info.json" \
+              "${UPLOAD_FILES[@]}" \
               --title "n8n 中文版 v${N8N_VERSION}" \
               --notes-file "${NOTES_FILE}" || echo "Release 创建失败，可能已存在"
           fi
 
-          echo "✅ Release ${UPSTREAM_TAG} 已更新完成（包含社区版和企业版）"
+          echo "✅ Release ${UPSTREAM_TAG} 已更新完成"
+          if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
+            echo "包含社区版和企业版"
+          else
+            echo "仅包含社区版"
+          fi
 
   sync-readme-to-dockerhub:
     if: github.event.inputs.sync_readme_only == 'true'
