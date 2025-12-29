@@ -6,9 +6,9 @@ FROM n8nio/n8n:${N8N_VERSION}
 
 # 安装 FFmpeg
 USER root
-RUN apk update \
-    && apk add --no-cache ffmpeg \
-    && rm -rf /var/cache/apk/*
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
 USER node
 
 # 复制中文 UI 文件
