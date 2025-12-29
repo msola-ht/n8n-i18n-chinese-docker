@@ -26,7 +26,7 @@ docker run -d \
   -e N8N_DEFAULT_LOCALE=zh-CN \
   -e GENERIC_TIMEZONE=Asia/Shanghai \
   -v n8n_data:/home/node/.n8n \
-  lunare/n8n-chinese:latest
+  lunare/n8n-chinese:2.1.4latest
 ```
 
 ### 企业版
@@ -38,7 +38,7 @@ docker run -d \
   -e N8N_DEFAULT_LOCALE=zh-CN \
   -e GENERIC_TIMEZONE=Asia/Shanghai \
   -v n8n_data:/home/node/.n8n \
-  lunare/n8n-chinese-enterprise:latest
+  lunare/n8n-chinese-enterprise:2.1.4latest
 ```
 
 访问 http://127.0.0.1:5678
