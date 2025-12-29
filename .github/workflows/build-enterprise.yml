@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      sync_readme_only:
+        description: '仅同步 README 到 Docker Hub (不构建镜像)'
+        required: false
+        type: boolean
+        default: false
 
 env:
   UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
@@ -370,6 +375,24 @@ jobs:
             git push origin "${UPSTREAM_TAG}"
           fi
 
+      - name: 同步 README 到 Docker Hub（社区版）
+        uses: docker/hub-description-sync-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese
+          short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像"
+          readme: README.md
+
+      - name: 同步 README 到 Docker Hub（企业版）
+        uses: docker/hub-description-sync-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise
+          short-description: "包含所有企业功能的 n8n 中文版 Docker 镜像（仅供学习测试）"
+          readme: README.md
+
   create_release:
     needs: [check, build-and-push-community, build-and-push-enterprise]
     # 在社区版和企业版都构建成功时才执行
@@ -454,3 +477,34 @@ jobs:
           fi
 
           echo "✅ Release ${UPSTREAM_TAG} 已更新完成（包含社区版和企业版）"
+
+  sync-readme-to-dockerhub:
+    if: github.event.inputs.sync_readme_only == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v3
+
+      - name: 同步 README 到 Docker Hub（社区版）
+        uses: docker/hub-description-sync-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese
+          short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像"
+          readme: README.md
+
+      - name: 同步 README 到 Docker Hub（企业版）
+        uses: docker/hub-description-sync-action@v1
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise
+          short-description: "包含所有企业功能的 n8n 中文版 Docker 镜像（仅供学习测试）"
+          readme: README.md
+
+      - name: 输出同步结果
+        run: |
+          echo "✅ README 已同步到 Docker Hub"
+          echo "社区版: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese"
+          echo "企业版: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise"
