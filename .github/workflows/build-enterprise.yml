@@ -390,7 +390,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese
           short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像"
-          readme: README.md
+          readme-filepath: README.md
 
       - name: 同步 README 到 Docker Hub（企业版）
         uses: peter-evans/dockerhub-description@v3
@@ -399,7 +399,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise
           short-description: "包含所有企业功能的 n8n 中文版 Docker 镜像（仅供学习测试）"
-          readme: README.md
+          readme-filepath: README.md
 
   create_release:
     needs: [check, build-and-push-community, build-and-push-enterprise]
@@ -540,7 +540,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese
           short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像"
-          readme: README.md
+          readme-filepath: README.md
 
       - name: 同步 README 到 Docker Hub（企业版）
         uses: peter-evans/dockerhub-description@v3
@@ -549,7 +549,7 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise
           short-description: "包含所有企业功能的 n8n 中文版 Docker 镜像（仅供学习测试）"
-          readme: README.md
+          readme-filepath: README.md
 
       - name: 输出同步结果
         run: |
