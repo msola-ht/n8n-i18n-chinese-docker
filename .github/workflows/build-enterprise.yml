@@ -367,6 +367,7 @@ jobs:
           git add README.md
           if ! git diff --staged --quiet; then
             git commit -m "ci: 自动更新版本标签至 ${NEW_VERSION}"
+            git pull --rebase
             git push
           fi
           
@@ -432,14 +433,22 @@ jobs:
           UPSTREAM_TAG: ${{ needs.check.outputs.tag }}
           DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
-          # 检查是否已存在 Release
-          if gh release view "${UPSTREAM_TAG}" --json title --jq .title 2>/dev/null; then
-            echo "Release ${UPSTREAM_TAG} 已存在，更新资产..."
+          # 检查是否已存在 Release（使用更可靠的方法）
+          RELEASE_EXISTS=false
+          if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
+            RELEASE_EXISTS=true
+            echo "Release ${UPSTREAM_TAG} 已存在，将更新资产..."
+          else
+            echo "Release ${UPSTREAM_TAG} 不存在，将创建新 Release..."
+          fi
 
+          if [ "$RELEASE_EXISTS" = true ]; then
             # 删除旧的镜像文件（如果存在）
-            OLD_ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | startswith("n8n-chinese-")) | .name')
+            OLD_ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | startswith("n8n-chinese-")) | .name' 2>/dev/null || echo "")
             if [ -n "$OLD_ASSETS" ]; then
-              echo "$OLD_ASSETS" | xargs -I {} gh release delete-asset "${UPSTREAM_TAG}" "{}" --yes
+              echo "$OLD_ASSETS" | while read -r asset; do
+                [ -n "$asset" ] && gh release delete-asset "${UPSTREAM_TAG}" "$asset" --yes 2>/dev/null || true
+              done
             fi
 
             # 上传新的镜像文件（社区版 + 企业版）
@@ -449,7 +458,7 @@ jobs:
               "docker-images/image-info.json" \
               "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" \
               "docker-images-enterprise/README.md" \
-              "docker-images-enterprise/image-info.json"
+              "docker-images-enterprise/image-info.json" || echo "部分资产上传失败，可能已存在"
           else
             echo "创建新的 Release ${UPSTREAM_TAG}..."
 
@@ -473,7 +482,7 @@ jobs:
               "docker-images-enterprise/README.md" \
               "docker-images-enterprise/image-info.json" \
               --title "n8n 中文版 v${N8N_VERSION}" \
-              --notes-file "${NOTES_FILE}"
+              --notes-file "${NOTES_FILE}" || echo "Release 创建失败，可能已存在"
           fi
 
           echo "✅ Release ${UPSTREAM_TAG} 已更新完成（包含社区版和企业版）"
