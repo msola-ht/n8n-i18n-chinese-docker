@@ -402,7 +402,7 @@ jobs:
           readme-filepath: README.md
 
   create_release:
-    needs: [check, build-and-push-community]
+    needs: [check, build-and-push-community, build-and-push-enterprise]
     if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -420,7 +420,7 @@ jobs:
 
       - name: 下载企业版镜像归档（如果存在）
         uses: actions/download-artifact@v4
-        continue-on-error: true
+        if: needs.build-and-push-enterprise.result == 'success'
         with:
           name: n8n-chinese-enterprise-image-${{ needs.check.outputs.n8n_version }}
           path: docker-images-enterprise/
@@ -474,16 +474,12 @@ jobs:
             # 上传新的镜像文件
             echo "上传社区版文件..."
             gh release upload "${UPSTREAM_TAG}" \
-              "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" \
-              "docker-images/README.md" \
-              "docker-images/image-info.json" || echo "社区版资产上传失败"
+              "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" || echo "社区版资产上传失败"
 
             if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
               echo "上传企业版文件..."
               gh release upload "${UPSTREAM_TAG}" \
-                "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" \
-                "docker-images-enterprise/README.md" \
-                "docker-images-enterprise/image-info.json" || echo "企业版资产上传失败"
+                "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" || echo "企业版资产上传失败"
             fi
           else
             echo "创建新的 Release ${UPSTREAM_TAG}..."
@@ -503,15 +499,11 @@ jobs:
             # 构建上传文件列表
             UPLOAD_FILES=(
               "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz"
-              "docker-images/README.md"
-              "docker-images/image-info.json"
             )
 
             if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
               UPLOAD_FILES+=(
                 "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz"
-                "docker-images-enterprise/README.md"
-                "docker-images-enterprise/image-info.json"
               )
             fi
 
