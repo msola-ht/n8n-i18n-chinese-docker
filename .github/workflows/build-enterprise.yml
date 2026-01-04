@@ -554,6 +554,13 @@ jobs:
           name: n8n-chinese-image-${{ needs.check.outputs.n8n_version }}
           path: docker-images/
 
+      - name: 下载国内版镜像归档（如果存在）
+        uses: actions/download-artifact@v4
+        if: needs.build-and-push-community-cn.result == 'success'
+        with:
+          name: n8n-chinese-cn-image-${{ needs.check.outputs.n8n_version }}
+          path: docker-images-cn/
+
       - name: 下载企业版镜像归档（如果存在）
         uses: actions/download-artifact@v4
         if: needs.build-and-push-enterprise.result == 'success'
@@ -565,6 +572,13 @@ jobs:
         run: |
           echo "下载的社区版文件："
           ls -la docker-images/
+          echo ""
+          echo "下载的国内版文件："
+          if [ -d "docker-images-cn" ]; then
+            ls -la docker-images-cn/
+          else
+            echo "国内版文件不存在"
+          fi
           echo ""
           echo "下载的企业版文件："
           if [ -d "docker-images-enterprise" ]; then
@@ -589,13 +603,22 @@ jobs:
             echo "Release ${UPSTREAM_TAG} 不存在，将创建新 Release..."
           fi
 
+          # 检查国内版文件是否存在
+          COMMUNITY_CN_FILES_EXIST=false
+          if [ -f "docker-images-cn/n8n-chinese-cn-${N8N_VERSION}.tar.gz" ]; then
+            COMMUNITY_CN_FILES_EXIST=true
+            echo "✅ 国内版文件存在，将包含在 Release 中"
+          else
+            echo "⚠️ 国内版文件不存在"
+          fi
+
           # 检查企业版文件是否存在
           ENTERPRISE_FILES_EXIST=false
           if [ -f "docker-images-enterprise/n8n-chinese-enterprise-${N8N_VERSION}.tar.gz" ]; then
             ENTERPRISE_FILES_EXIST=true
             echo "✅ 企业版文件存在，将包含在 Release 中"
           else
-            echo "⚠️ 企业版文件不存在，仅发布社区版"
+            echo "⚠️ 企业版文件不存在"
           fi
 
           if [ "$RELEASE_EXISTS" = true ]; then
@@ -612,6 +635,12 @@ jobs:
             gh release upload "${UPSTREAM_TAG}" \
               "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz" || echo "社区版资产上传失败"
 
+            if [ "$COMMUNITY_CN_FILES_EXIST" = true ]; then
+              echo "上传国内版文件..."
+              gh release upload "${UPSTREAM_TAG}" \
+                "docker-images-cn/n8n-chinese-cn-${N8N_VERSION}.tar.gz" || echo "国内版资产上传失败"
+            fi
+
             if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
               echo "上传企业版文件..."
               gh release upload "${UPSTREAM_TAG}" \
@@ -622,12 +651,15 @@ jobs:
 
             # 创建 Release
             NOTES_FILE="/tmp/release-notes.txt"
-            printf '## n8n 中文版 Docker 镜像 v%s\n\n### 社区版\n- 镜像: %s/n8n-chinese:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese\n\n### 企业版\n- 镜像: %s/n8n-chinese-enterprise:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese-enterprise\n- 说明: 企业版包含所有企业级功能（通过 Mock 激活）\n\n## 使用方法\n\n### 社区版 - 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese:%s\n```\n\n### 企业版 - 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n-enterprise \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese-enterprise:%s\n```\n\n### 离线导入（下载下方 tar.gz 文件）\n\n**社区版**:\n1. 下载 n8n-chinese-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-%s.tar.gz\n   ```\n\n**企业版**:\n1. 下载 n8n-chinese-enterprise-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-enterprise-%s.tar.gz\n   ```\n' \
+            printf '## n8n 中文版 Docker 镜像 v%s\n\n### 镜像版本说明\n\n**社区版（官方源）**\n- 镜像: %s/n8n-chinese:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese\n- 特点: 使用官方 npm 源构建\n\n**社区版（国内源）🇨🇳**\n- 镜像: %s/n8n-chinese-cn:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese-cn\n- 特点: 使用国内 npm 镜像源（registry.npmmirror.com）构建，国内用户推荐\n\n**企业版**\n- 镜像: %s/n8n-chinese-enterprise:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese-enterprise\n- 说明: 企业版包含所有企业级功能（通过 Mock 激活，仅供学习测试）\n\n## 使用方法\n\n### 社区版（官方源）- 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese:%s\n```\n\n### 社区版（国内源）- 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese-cn:%s\n```\n\n### 企业版 - 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n-enterprise \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese-enterprise:%s\n```\n\n### 离线导入（下载下方 tar.gz 文件）\n\n**社区版（官方源）**:\n1. 下载 n8n-chinese-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-%s.tar.gz\n   ```\n\n**社区版（国内源）**:\n1. 下载 n8n-chinese-cn-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-cn-%s.tar.gz\n   ```\n\n**企业版**:\n1. 下载 n8n-chinese-enterprise-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-enterprise-%s.tar.gz\n   ```\n' \
               "${N8N_VERSION}" \
               "${DOCKER_USER}" "${N8N_VERSION}" "${DOCKER_USER}" \
               "${DOCKER_USER}" "${N8N_VERSION}" "${DOCKER_USER}" \
+              "${DOCKER_USER}" "${N8N_VERSION}" "${DOCKER_USER}" \
               "${DOCKER_USER}" "${N8N_VERSION}" \
               "${DOCKER_USER}" "${N8N_VERSION}" \
+              "${DOCKER_USER}" "${N8N_VERSION}" \
+              "${N8N_VERSION}" "${N8N_VERSION}" \
               "${N8N_VERSION}" "${N8N_VERSION}" \
               "${N8N_VERSION}" "${N8N_VERSION}" \
               > "${NOTES_FILE}"
@@ -636,6 +668,12 @@ jobs:
             UPLOAD_FILES=(
               "docker-images/n8n-chinese-${N8N_VERSION}.tar.gz"
             )
+
+            if [ "$COMMUNITY_CN_FILES_EXIST" = true ]; then
+              UPLOAD_FILES+=(
+                "docker-images-cn/n8n-chinese-cn-${N8N_VERSION}.tar.gz"
+              )
+            fi
 
             if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
               UPLOAD_FILES+=(
@@ -651,10 +689,13 @@ jobs:
           fi
 
           echo "✅ Release ${UPSTREAM_TAG} 已更新完成"
+          echo "包含的镜像版本："
+          echo "  - 社区版（官方源）"
+          if [ "$COMMUNITY_CN_FILES_EXIST" = true ]; then
+            echo "  - 社区版（国内源）🇨🇳"
+          fi
           if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
-            echo "包含社区版和企业版"
-          else
-            echo "仅包含社区版"
+            echo "  - 企业版"
           fi
 
   sync-readme-to-dockerhub:
