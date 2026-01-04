@@ -7,8 +7,8 @@ FROM n8nio/n8n:${N8N_VERSION}
 
 USER root
 
-# 配置 NPM 源
-RUN npm config set registry ${NPM_REGISTRY}
+# 配置 NPM 源（全局配置，对所有用户生效）
+RUN npm config set registry ${NPM_REGISTRY} --global
 
 # 复制中文 UI 文件
 COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
