@@ -32,6 +32,7 @@ jobs:
       asset_url: ${{ steps.get_release.outputs.asset_url }}
       n8n_version: ${{ steps.get_n8n_version.outputs.n8n_version }}
       build_community: ${{ steps.check_images.outputs.build_community }}
+      build_community_cn: ${{ steps.check_images.outputs.build_community_cn }}
       build_enterprise: ${{ steps.check_images.outputs.build_enterprise }}
       should_run_anything: ${{ steps.check_images.outputs.should_run_anything }}
 
@@ -68,32 +69,60 @@ jobs:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
         run: |
           BUILD_COMMUNITY="false"
+          BUILD_COMMUNITY_CN="false"
           BUILD_ENTERPRISE="false"
 
-          # 检查社区版镜像
+          # 检查社区版官方源镜像
           COMMUNITY_IMAGE="${DOCKERHUB_USERNAME}/n8n-chinese"
           COMMUNITY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${COMMUNITY_IMAGE}/tags/${N8N_VERSION}")
-          echo "检查社区版镜像 ${COMMUNITY_IMAGE}:${N8N_VERSION} -> 状态码: ${COMMUNITY_STATUS}"
+          echo "检查社区版官方源镜像 ${COMMUNITY_IMAGE}:${N8N_VERSION} -> 状态码: ${COMMUNITY_STATUS}"
 
           if [[ "${{ github.event.inputs.force_build_community }}" == "true" || "$COMMUNITY_STATUS" != "200" ]]; then
             BUILD_COMMUNITY="true"
-            echo "需要构建社区版镜像: 强制构建=${{ github.event.inputs.force_build_community }}, 镜像不存在=$([[ "$COMMUNITY_STATUS" != "200" ]] && echo true || echo false)"
+            echo "需要构建社区版官方源镜像: 强制构建=${{ github.event.inputs.force_build_community }}, 镜像不存在=$([[ "$COMMUNITY_STATUS" != "200" ]] && echo true || echo false)"
           else
             # 如果镜像存在，进一步检查多架构支持
-            echo "正在检查社区版镜像的多架构支持..."
+            echo "正在检查社区版官方源镜像的多架构支持..."
             docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" 2>/dev/null && {
               HAS_AMD64=$(docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/amd64" && echo "true" || echo "false")
               HAS_ARM64=$(docker buildx imagetools inspect "${COMMUNITY_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/arm64" && echo "true" || echo "false")
               echo "架构检查结果: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
               if [[ "$HAS_AMD64" == "true" && "$HAS_ARM64" == "true" ]]; then
-                echo "社区版镜像已支持 linux/amd64 和 linux/arm64 架构"
+                echo "社区版官方源镜像已支持 linux/amd64 和 linux/arm64 架构"
               else
-                echo "社区版镜像架构不完整: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
+                echo "社区版官方源镜像架构不完整: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
                 BUILD_COMMUNITY="true"
               fi
             } || {
-              echo "无法检查社区版镜像架构，需要重新构建"
+              echo "无法检查社区版官方源镜像架构，需要重新构建"
               BUILD_COMMUNITY="true"
+            }
+          fi
+
+          # 检查社区版国内源镜像
+          COMMUNITY_CN_IMAGE="${DOCKERHUB_USERNAME}/n8n-chinese-cn"
+          COMMUNITY_CN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${COMMUNITY_CN_IMAGE}/tags/${N8N_VERSION}")
+          echo "检查社区版国内源镜像 ${COMMUNITY_CN_IMAGE}:${N8N_VERSION} -> 状态码: ${COMMUNITY_CN_STATUS}"
+
+          if [[ "${{ github.event.inputs.force_build_community }}" == "true" || "$COMMUNITY_CN_STATUS" != "200" ]]; then
+            BUILD_COMMUNITY_CN="true"
+            echo "需要构建社区版国内源镜像: 强制构建=${{ github.event.inputs.force_build_community }}, 镜像不存在=$([[ "$COMMUNITY_CN_STATUS" != "200" ]] && echo true || echo false)"
+          else
+            # 如果镜像存在，进一步检查多架构支持
+            echo "正在检查社区版国内源镜像的多架构支持..."
+            docker buildx imagetools inspect "${COMMUNITY_CN_IMAGE}:${N8N_VERSION}" 2>/dev/null && {
+              HAS_AMD64=$(docker buildx imagetools inspect "${COMMUNITY_CN_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/amd64" && echo "true" || echo "false")
+              HAS_ARM64=$(docker buildx imagetools inspect "${COMMUNITY_CN_IMAGE}:${N8N_VERSION}" | grep -q "Platform:    linux/arm64" && echo "true" || echo "false")
+              echo "架构检查结果: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
+              if [[ "$HAS_AMD64" == "true" && "$HAS_ARM64" == "true" ]]; then
+                echo "社区版国内源镜像已支持 linux/amd64 和 linux/arm64 架构"
+              else
+                echo "社区版国内源镜像架构不完整: AMD64=$HAS_AMD64, ARM64=$HAS_ARM64"
+                BUILD_COMMUNITY_CN="true"
+              fi
+            } || {
+              echo "无法检查社区版国内源镜像架构，需要重新构建"
+              BUILD_COMMUNITY_CN="true"
             }
           fi
 
@@ -125,9 +154,10 @@ jobs:
           fi
 
           echo "build_community=${BUILD_COMMUNITY}" >> "$GITHUB_OUTPUT"
+          echo "build_community_cn=${BUILD_COMMUNITY_CN}" >> "$GITHUB_OUTPUT"
           echo "build_enterprise=${BUILD_ENTERPRISE}" >> "$GITHUB_OUTPUT"
 
-          if [[ "$BUILD_COMMUNITY" == "true" || "$BUILD_ENTERPRISE" == "true" ]]; then
+          if [[ "$BUILD_COMMUNITY" == "true" || "$BUILD_COMMUNITY_CN" == "true" || "$BUILD_ENTERPRISE" == "true" ]]; then
             echo "should_run_anything=true" >> "$GITHUB_OUTPUT"
           else
             echo "should_run_anything=false" >> "$GITHUB_OUTPUT"
@@ -224,6 +254,103 @@ jobs:
           echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}"
           echo "🏗️  支持架构: linux/amd64, linux/arm64"
           echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese"
+          echo "💾 镜像归档: 已上传到 GitHub Actions Artifacts"
+
+  build-and-push-community-cn:
+    needs: check
+    if: needs.check.outputs.build_community_cn == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v3
+
+      - name: 设置 Docker Hub 用户名
+        run: echo "DOCKERHUB_USERNAME=$(echo '${{ secrets.DOCKERHUB_USERNAME }}' | xargs)" >> "$GITHUB_ENV"
+
+      - name: 下载并解压
+        run: |
+          mkdir -p src-dist
+          curl -L "${{ needs.check.outputs.asset_url }}" -o src-dist/editor-ui.tar.gz
+          tar -xzvf src-dist/editor-ui.tar.gz -C src-dist
+
+      - name: 登录到 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 构建并推送社区版国内源版本
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.community
+          push: true
+          platforms: linux/amd64,linux/arm64
+          tags: |
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:${{ needs.check.outputs.n8n_version }}
+            ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            N8N_VERSION=${{ needs.check.outputs.n8n_version }}
+            NPM_REGISTRY=https://registry.npmmirror.com
+
+      - name: 导出社区版国内源镜像
+        run: |
+          echo "📦 开始导出社区版国内源镜像..."
+          mkdir -p docker-images-cn
+          docker pull ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:${{ needs.check.outputs.n8n_version }}
+          echo "正在导出镜像 ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:${{ needs.check.outputs.n8n_version }}..."
+          docker save ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:${{ needs.check.outputs.n8n_version }} | \
+            gzip > "docker-images-cn/n8n-chinese-cn-${{ needs.check.outputs.n8n_version }}.tar.gz"
+
+      - name: 创建文档
+        run: |
+          printf '# n8n 中文版 Docker 镜像（国内源优化版）\n\n## 镜像信息\n- 版本: %s\n- 镜像: %s/n8n-chinese-cn:%s\n- 架构: linux/amd64, linux/arm64\n- **说明**: 使用国内 npm 镜像源构建，适合国内用户使用\n\n## 国内源优化\n\n- NPM 源: https://registry.npmmirror.com\n- 构建时使用国内镜像，安装依赖更快\n\n## 导入镜像\n\n1. 将镜像文件下载到本地\n2. 直接导入镜像（无需解压）：\n   ```bash\n   docker load -i n8n-chinese-cn-%s.tar.gz\n   ```\n   \n   或使用以下命令：\n   ```bash\n   docker load < n8n-chinese-cn-%s.tar.gz\n   ```\n\n## 运行容器\n\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese-cn:%s\n```\n\n## 更多信息\n\n- 项目主页: https://github.com/msola-ht/n8n-i18n-chinese-docker\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese-cn\n' \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ env.DOCKERHUB_USERNAME }}" \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ env.DOCKERHUB_USERNAME }}" \
+            "${{ needs.check.outputs.n8n_version }}" \
+            "${{ env.DOCKERHUB_USERNAME }}" \
+            > docker-images-cn/README.md
+
+      - name: 生成镜像信息
+        run: |
+          echo '{' > docker-images-cn/image-info.json
+          echo '  "version": "${{ needs.check.outputs.n8n_version }}",' >> docker-images-cn/image-info.json
+          echo '  "edition": "community-cn",' >> docker-images-cn/image-info.json
+          echo '  "image": "${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:${{ needs.check.outputs.n8n_version }}",' >> docker-images-cn/image-info.json
+          echo '  "platforms": ["linux/amd64", "linux/arm64"],' >> docker-images-cn/image-info.json
+          echo '  "npm_registry": "https://registry.npmmirror.com",' >> docker-images-cn/image-info.json
+          echo '  "build_date": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",' >> docker-images-cn/image-info.json
+          echo '  "upstream_tag": "${{ needs.check.outputs.tag }}"' >> docker-images-cn/image-info.json
+          echo '}' >> docker-images-cn/image-info.json
+
+      - name: 输出导出信息
+        run: |
+          echo "::notice::社区版国内源镜像已导出为: docker-images-cn/n8n-chinese-cn-${{ needs.check.outputs.n8n_version }}.tar.gz"
+          echo "::notice::镜像大小: $(du -h docker-images-cn/n8n-chinese-cn-${{ needs.check.outputs.n8n_version }}.tar.gz | cut -f1)"
+
+      - name: 上传镜像归档到 Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: n8n-chinese-cn-image-${{ needs.check.outputs.n8n_version }}
+          path: docker-images-cn/
+          retention-days: 30
+
+      - name: 输出社区版国内源构建信息
+        run: |
+          echo "✅ 社区版国内源镜像构建成功"
+          echo "📦 镜像标签: ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn:${{ needs.check.outputs.n8n_version }}"
+          echo "🏗️  支持架构: linux/amd64, linux/arm64"
+          echo "🇨🇳 NPM 源: https://registry.npmmirror.com"
+          echo "🔗 Docker Hub: https://hub.docker.com/r/${{ env.DOCKERHUB_USERNAME }}/n8n-chinese-cn"
           echo "💾 镜像归档: 已上传到 GitHub Actions Artifacts"
 
   build-and-push-enterprise:
@@ -341,8 +468,8 @@ jobs:
           echo "💾 镜像归档: 已上传到 GitHub Actions Artifacts"
 
   finalize_release:
-    needs: [check, build-and-push-community, build-and-push-enterprise]
-    if: always() && needs.check.outputs.should_run_anything == 'true' && (needs.build-and-push-community.result != 'failure' && needs.build-and-push-enterprise.result != 'failure')
+    needs: [check, build-and-push-community, build-and-push-community-cn, build-and-push-enterprise]
+    if: always() && needs.check.outputs.should_run_anything == 'true' && (needs.build-and-push-community.result != 'failure' && needs.build-and-push-community-cn.result != 'failure' && needs.build-and-push-enterprise.result != 'failure')
     runs-on: ubuntu-latest
     steps:
       - name: 拉取代码
@@ -383,13 +510,22 @@ jobs:
             git push origin "${UPSTREAM_TAG}"
           fi
 
-      - name: 同步 README 到 Docker Hub（社区版）
+      - name: 同步 README 到 Docker Hub（社区版官方源）
         uses: peter-evans/dockerhub-description@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese
           short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像"
+          readme-filepath: README.md
+
+      - name: 同步 README 到 Docker Hub（社区版国内源）
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-cn
+          short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像（国内 npm 源优化版）"
           readme-filepath: README.md
 
       - name: 同步 README 到 Docker Hub（企业版）
@@ -402,7 +538,7 @@ jobs:
           readme-filepath: README.md
 
   create_release:
-    needs: [check, build-and-push-community, build-and-push-enterprise]
+    needs: [check, build-and-push-community, build-and-push-community-cn, build-and-push-enterprise]
     if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success'
     runs-on: ubuntu-latest
     permissions:
@@ -528,13 +664,22 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v3
 
-      - name: 同步 README 到 Docker Hub（社区版）
+      - name: 同步 README 到 Docker Hub（社区版官方源）
         uses: peter-evans/dockerhub-description@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese
           short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像"
+          readme-filepath: README.md
+
+      - name: 同步 README 到 Docker Hub（社区版国内源）
+        uses: peter-evans/dockerhub-description@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-cn
+          short-description: "自动构建包含完整中文语言包的 n8n Docker 镜像（国内 npm 源优化版）"
           readme-filepath: README.md
 
       - name: 同步 README 到 Docker Hub（企业版）
@@ -549,5 +694,6 @@ jobs:
       - name: 输出同步结果
         run: |
           echo "✅ README 已同步到 Docker Hub"
-          echo "社区版: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese"
+          echo "社区版官方源: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese"
+          echo "社区版国内源: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-cn"
           echo "企业版: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise"
