@@ -10,6 +10,11 @@ on:
         required: false
         type: boolean
         default: false
+      force_build_community_cn:
+        description: '强制重新构建社区版国内源 (即使已存在)'
+        required: false
+        type: boolean
+        default: false
       force_build_enterprise:
         description: '强制重新构建企业版 (即使已存在)'
         required: false
@@ -104,9 +109,9 @@ jobs:
           COMMUNITY_CN_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://hub.docker.com/v2/repositories/${COMMUNITY_CN_IMAGE}/tags/${N8N_VERSION}")
           echo "检查社区版国内源镜像 ${COMMUNITY_CN_IMAGE}:${N8N_VERSION} -> 状态码: ${COMMUNITY_CN_STATUS}"
 
-          if [[ "${{ github.event.inputs.force_build_community }}" == "true" || "$COMMUNITY_CN_STATUS" != "200" ]]; then
+          if [[ "${{ github.event.inputs.force_build_community_cn }}" == "true" || "$COMMUNITY_CN_STATUS" != "200" ]]; then
             BUILD_COMMUNITY_CN="true"
-            echo "需要构建社区版国内源镜像: 强制构建=${{ github.event.inputs.force_build_community }}, 镜像不存在=$([[ "$COMMUNITY_CN_STATUS" != "200" ]] && echo true || echo false)"
+            echo "需要构建社区版国内源镜像: 强制构建=${{ github.event.inputs.force_build_community_cn }}, 镜像不存在=$([[ "$COMMUNITY_CN_STATUS" != "200" ]] && echo true || echo false)"
           else
             # 如果镜像存在，进一步检查多架构支持
             echo "正在检查社区版国内源镜像的多架构支持..."
