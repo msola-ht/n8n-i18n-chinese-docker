@@ -20,11 +20,6 @@ on:
         required: false
         type: boolean
         default: false
-      export_n8n_runners:
-        description: '导出 n8nio/runners 镜像到发行版'
-        required: false
-        type: boolean
-        default: false
 
 env:
   UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
@@ -745,7 +740,8 @@ jobs:
           echo "企业版: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise"
 
   export-n8n-runners:
-    if: github.event.inputs.export_n8n_runners == 'true'
+    needs: [check, build-and-push-community, build-and-push-community-cn, build-and-push-enterprise]
+    if: always() && needs.check.outputs.should_run_anything == 'true' && needs.build-and-push-community.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
