@@ -20,6 +20,11 @@ on:
         required: false
         type: boolean
         default: false
+      export_n8n_runners:
+        description: '导出 n8nio/n8n-runners 镜像到发行版'
+        required: false
+        type: boolean
+        default: false
 
 env:
   UPSTREAM_REPO: other-blowsnow/n8n-i18n-chinese
@@ -738,3 +743,130 @@ jobs:
           echo "社区版官方源: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese"
           echo "社区版国内源: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-cn"
           echo "企业版: ${{ secrets.DOCKERHUB_USERNAME }}/n8n-chinese-enterprise"
+
+  export-n8n-runners:
+    if: github.event.inputs.export_n8n_runners == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v3
+
+      - name: 获取上游最新发布信息
+        id: get_release
+        run: |
+          latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
+          tag=$(echo "$latest_release" | jq -r .tag_name | xargs)
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "检测到上游标签: ${tag}"
+
+      - name: 从标签中提取 n8n 版本号
+        id: get_n8n_version
+        run: |
+          TAG_REF="${{ steps.get_release.outputs.tag }}"
+          N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
+          echo "n8n_version=$N8N_VERSION" >> "$GITHUB_OUTPUT"
+          echo "提取 n8n 版本: ${N8N_VERSION}"
+
+      - name: 设置 Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 拉取 n8nio/n8n-runners 镜像
+        run: |
+          echo "📥 正在拉取 n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}..."
+          docker pull n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}
+          echo "✅ 镜像拉取成功"
+
+      - name: 导出 n8n-runners 镜像
+        run: |
+          echo "📦 开始导出 n8n-runners 镜像..."
+          mkdir -p docker-images-runners
+          echo "正在导出镜像 n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}..."
+          docker save n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }} | \
+            gzip > "docker-images-runners/n8n-runners-${{ steps.get_n8n_version.outputs.n8n_version }}.tar.gz"
+          echo "✅ 镜像导出完成"
+
+      - name: 创建文档
+        run: |
+          printf '# n8n-runners 官方 Docker 镜像\n\n## 镜像信息\n- 版本: %s\n- 镜像: n8nio/n8n-runners:%s\n- 架构: linux/amd64, linux/arm64\n- **说明**: n8n 官方 runners 镜像，用于执行 n8n 工作流节点\n\n## 导入镜像\n\n1. 将镜像文件下载到本地\n2. 直接导入镜像（无需解压）：\n   ```bash\n   docker load -i n8n-runners-%s.tar.gz\n   ```\n   \n   或使用以下命令：\n   ```bash\n   docker load < n8n-runners-%s.tar.gz\n   ```\n\n## 运行容器\n\n```bash\ndocker run -d --name n8n-runner \\\n  n8nio/n8n-runners:%s\n```\n\n## 更多信息\n\n- 官方文档: https://docs.n8n.io/\n- Docker Hub: https://hub.docker.com/r/n8nio/n8n-runners\n- n8n GitHub: https://github.com/n8n-io/n8n\n' \
+            "${{ steps.get_n8n_version.outputs.n8n_version }}" \
+            "${{ steps.get_n8n_version.outputs.n8n_version }}" \
+            "${{ steps.get_n8n_version.outputs.n8n_version }}" \
+            "${{ steps.get_n8n_version.outputs.n8n_version }}" \
+            "${{ steps.get_n8n_version.outputs.n8n_version }}" \
+            > docker-images-runners/README.md
+
+      - name: 生成镜像信息
+        run: |
+          echo '{' > docker-images-runners/image-info.json
+          echo '  "version": "${{ steps.get_n8n_version.outputs.n8n_version }}",' >> docker-images-runners/image-info.json
+          echo '  "edition": "n8n-runners",' >> docker-images-runners/image-info.json
+          echo '  "image": "n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}",' >> docker-images-runners/image-info.json
+          echo '  "platforms": ["linux/amd64", "linux/arm64"],' >> docker-images-runners/image-info.json
+          echo '  "build_date": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",' >> docker-images-runners/image-info.json
+          echo '  "upstream_tag": "${{ steps.get_release.outputs.tag }}"' >> docker-images-runners/image-info.json
+          echo '}' >> docker-images-runners/image-info.json
+
+      - name: 输出导出信息
+        run: |
+          echo "::notice::n8n-runners 镜像已导出为: docker-images-runners/n8n-runners-${{ steps.get_n8n_version.outputs.n8n_version }}.tar.gz"
+          echo "::notice::镜像大小: $(du -h docker-images-runners/n8n-runners-${{ steps.get_n8n_version.outputs.n8n_version }}.tar.gz | cut -f1)"
+
+      - name: 上传到 GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
+          UPSTREAM_TAG: ${{ steps.get_release.outputs.tag }}
+        run: |
+          # 检查是否已存在 Release
+          RELEASE_EXISTS=false
+          if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
+            RELEASE_EXISTS=true
+            echo "Release ${UPSTREAM_TAG} 已存在，将添加 n8n-runners 镜像..."
+          else
+            echo "Release ${UPSTREAM_TAG} 不存在，将创建新 Release..."
+          fi
+
+          if [ "$RELEASE_EXISTS" = true ]; then
+            # 删除旧的 n8n-runners 文件（如果存在）
+            OLD_RUNNER_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | startswith("n8n-runners-")) | .name' 2>/dev/null || echo "")
+            if [ -n "$OLD_RUNNER_ASSET" ]; then
+              echo "$OLD_RUNNER_ASSET" | while read -r asset; do
+                [ -n "$asset" ] && gh release delete-asset "${UPSTREAM_TAG}" "$asset" --yes 2>/dev/null || true
+              done
+            fi
+
+            # 上传 n8n-runners 镜像
+            echo "上传 n8n-runners 镜像到 Release ${UPSTREAM_TAG}..."
+            gh release upload "${UPSTREAM_TAG}" \
+              "docker-images-runners/n8n-runners-${N8N_VERSION}.tar.gz" || echo "n8n-runners 镜像上传失败"
+          else
+            echo "创建新的 Release ${UPSTREAM_TAG}..."
+
+            # 创建 Release Notes
+            NOTES_FILE="/tmp/runners-release-notes.txt"
+            printf '## n8n-runners 官方镜像 v%s\n\n### 镜像信息\n\n- **镜像**: n8nio/n8n-runners:%s\n- **版本**: %s\n- **架构**: linux/amd64, linux/arm64\n\n### 使用方法\n\n#### 从 Docker Hub 拉取\n```bash\ndocker pull n8nio/n8n-runners:%s\n```\n\n#### 离线导入（下载下方 tar.gz 文件）\n\n1. 下载 n8n-runners-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-runners-%s.tar.gz\n   ```\n\n### 说明\n\n这是 n8n 官方提供的 runners 镜像，用于执行 n8n 工作流中的各个节点。\n\n### 更多信息\n\n- 官方文档: https://docs.n8n.io/\n- Docker Hub: https://hub.docker.com/r/n8nio/n8n-runners\n- n8n GitHub: https://github.com/n8n-io/n8n\n' \
+              "${N8N_VERSION}" \
+              "${N8N_VERSION}" "${N8N_VERSION}" \
+              "${N8N_VERSION}" \
+              "${N8N_VERSION}" "${N8N_VERSION}" \
+              > "${NOTES_FILE}"
+
+            # 创建 Release 并上传文件
+            gh release create "${UPSTREAM_TAG}" \
+              "docker-images-runners/n8n-runners-${N8N_VERSION}.tar.gz" \
+              --title "n8n-runners v${N8N_VERSION}" \
+              --notes-file "${NOTES_FILE}" || echo "Release 创建失败"
+          fi
+
+          echo "✅ n8n-runners 镜像已成功上传到 Release ${UPSTREAM_TAG}"
+
+      - name: 输出完成信息
+        run: |
+          echo "✅ n8n-runners 镜像导出完成"
+          echo "📦 镜像标签: n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}"
+          echo "🏗️  支持架构: linux/amd64, linux/arm64"
+          echo "🔗 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.get_release.outputs.tag }}"
+          echo "💾 镜像归档: 已上传到 GitHub Releases"
