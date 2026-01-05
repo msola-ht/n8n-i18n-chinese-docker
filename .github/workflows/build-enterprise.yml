@@ -21,7 +21,7 @@ on:
         type: boolean
         default: false
       export_n8n_runners:
-        description: '导出 n8nio/n8n-runners 镜像到发行版'
+        description: '导出 n8nio/runners 镜像到发行版'
         required: false
         type: boolean
         default: false
@@ -773,24 +773,24 @@ jobs:
       - name: 设置 Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 拉取 n8nio/n8n-runners 镜像
+      - name: 拉取 n8nio/runners 镜像
         run: |
-          echo "📥 正在拉取 n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}..."
-          docker pull n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}
+          echo "📥 正在拉取 n8nio/runners:${{ steps.get_n8n_version.outputs.n8n_version }}..."
+          docker pull n8nio/runners:${{ steps.get_n8n_version.outputs.n8n_version }}
           echo "✅ 镜像拉取成功"
 
       - name: 导出 n8n-runners 镜像
         run: |
           echo "📦 开始导出 n8n-runners 镜像..."
           mkdir -p docker-images-runners
-          echo "正在导出镜像 n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}..."
-          docker save n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }} | \
+          echo "正在导出镜像 n8nio/runners:${{ steps.get_n8n_version.outputs.n8n_version }}..."
+          docker save n8nio/runners:${{ steps.get_n8n_version.outputs.n8n_version }} | \
             gzip > "docker-images-runners/n8n-runners-${{ steps.get_n8n_version.outputs.n8n_version }}.tar.gz"
           echo "✅ 镜像导出完成"
 
       - name: 创建文档
         run: |
-          printf '# n8n-runners 官方 Docker 镜像\n\n## 镜像信息\n- 版本: %s\n- 镜像: n8nio/n8n-runners:%s\n- 架构: linux/amd64, linux/arm64\n- **说明**: n8n 官方 runners 镜像，用于执行 n8n 工作流节点\n\n## 导入镜像\n\n1. 将镜像文件下载到本地\n2. 直接导入镜像（无需解压）：\n   ```bash\n   docker load -i n8n-runners-%s.tar.gz\n   ```\n   \n   或使用以下命令：\n   ```bash\n   docker load < n8n-runners-%s.tar.gz\n   ```\n\n## 运行容器\n\n```bash\ndocker run -d --name n8n-runner \\\n  n8nio/n8n-runners:%s\n```\n\n## 更多信息\n\n- 官方文档: https://docs.n8n.io/\n- Docker Hub: https://hub.docker.com/r/n8nio/n8n-runners\n- n8n GitHub: https://github.com/n8n-io/n8n\n' \
+          printf '# n8n-runners 官方 Docker 镜像\n\n## 镜像信息\n- 版本: %s\n- 镜像: n8nio/runners:%s\n- 架构: linux/amd64, linux/arm64\n- **说明**: n8n 官方 runners 镜像，用于执行 n8n 工作流节点\n\n## 导入镜像\n\n1. 将镜像文件下载到本地\n2. 直接导入镜像（无需解压）：\n   ```bash\n   docker load -i n8n-runners-%s.tar.gz\n   ```\n   \n   或使用以下命令：\n   ```bash\n   docker load < n8n-runners-%s.tar.gz\n   ```\n\n## 运行容器\n\n```bash\ndocker run -d --name n8n-runner \\\n  n8nio/runners:%s\n```\n\n## 更多信息\n\n- 官方文档: https://docs.n8n.io/\n- Docker Hub: https://hub.docker.com/r/n8nio/runners\n- n8n GitHub: https://github.com/n8n-io/n8n\n' \
             "${{ steps.get_n8n_version.outputs.n8n_version }}" \
             "${{ steps.get_n8n_version.outputs.n8n_version }}" \
             "${{ steps.get_n8n_version.outputs.n8n_version }}" \
@@ -803,7 +803,7 @@ jobs:
           echo '{' > docker-images-runners/image-info.json
           echo '  "version": "${{ steps.get_n8n_version.outputs.n8n_version }}",' >> docker-images-runners/image-info.json
           echo '  "edition": "n8n-runners",' >> docker-images-runners/image-info.json
-          echo '  "image": "n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}",' >> docker-images-runners/image-info.json
+          echo '  "image": "n8nio/runners:${{ steps.get_n8n_version.outputs.n8n_version }}",' >> docker-images-runners/image-info.json
           echo '  "platforms": ["linux/amd64", "linux/arm64"],' >> docker-images-runners/image-info.json
           echo '  "build_date": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",' >> docker-images-runners/image-info.json
           echo '  "upstream_tag": "${{ steps.get_release.outputs.tag }}"' >> docker-images-runners/image-info.json
@@ -847,7 +847,7 @@ jobs:
 
             # 创建 Release Notes
             NOTES_FILE="/tmp/runners-release-notes.txt"
-            printf '## n8n-runners 官方镜像 v%s\n\n### 镜像信息\n\n- **镜像**: n8nio/n8n-runners:%s\n- **版本**: %s\n- **架构**: linux/amd64, linux/arm64\n\n### 使用方法\n\n#### 从 Docker Hub 拉取\n```bash\ndocker pull n8nio/n8n-runners:%s\n```\n\n#### 离线导入（下载下方 tar.gz 文件）\n\n1. 下载 n8n-runners-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-runners-%s.tar.gz\n   ```\n\n### 说明\n\n这是 n8n 官方提供的 runners 镜像，用于执行 n8n 工作流中的各个节点。\n\n### 更多信息\n\n- 官方文档: https://docs.n8n.io/\n- Docker Hub: https://hub.docker.com/r/n8nio/n8n-runners\n- n8n GitHub: https://github.com/n8n-io/n8n\n' \
+            printf '## n8n-runners 官方镜像 v%s\n\n### 镜像信息\n\n- **镜像**: n8nio/runners:%s\n- **版本**: %s\n- **架构**: linux/amd64, linux/arm64\n\n### 使用方法\n\n#### 从 Docker Hub 拉取\n```bash\ndocker pull n8nio/runners:%s\n```\n\n#### 离线导入（下载下方 tar.gz 文件）\n\n1. 下载 n8n-runners-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-runners-%s.tar.gz\n   ```\n\n### 说明\n\n这是 n8n 官方提供的 runners 镜像，用于执行 n8n 工作流中的各个节点。\n\n### 更多信息\n\n- 官方文档: https://docs.n8n.io/\n- Docker Hub: https://hub.docker.com/r/n8nio/runners\n- n8n GitHub: https://github.com/n8n-io/n8n\n' \
               "${N8N_VERSION}" \
               "${N8N_VERSION}" "${N8N_VERSION}" \
               "${N8N_VERSION}" \
@@ -866,7 +866,7 @@ jobs:
       - name: 输出完成信息
         run: |
           echo "✅ n8n-runners 镜像导出完成"
-          echo "📦 镜像标签: n8nio/n8n-runners:${{ steps.get_n8n_version.outputs.n8n_version }}"
+          echo "📦 镜像标签: n8nio/runners:${{ steps.get_n8n_version.outputs.n8n_version }}"
           echo "🏗️  支持架构: linux/amd64, linux/arm64"
           echo "🔗 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.get_release.outputs.tag }}"
           echo "💾 镜像归档: 已上传到 GitHub Releases"
