@@ -654,20 +654,122 @@ jobs:
           else
             echo "创建新的 Release ${UPSTREAM_TAG}..."
 
-            # 创建 Release
+            # 动态创建 Release Notes
             NOTES_FILE="/tmp/release-notes.txt"
-            printf '## n8n 中文版 Docker 镜像 v%s\n\n### 镜像版本说明\n\n**社区版（官方源）**\n- 镜像: %s/n8n-chinese:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese\n- 特点: 使用官方 npm 源构建\n\n**社区版（国内源）🇨🇳**\n- 镜像: %s/n8n-chinese-cn:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese-cn\n- 特点: 使用国内 npm 镜像源（registry.npmmirror.com）构建，国内用户推荐\n\n**企业版**\n- 镜像: %s/n8n-chinese-enterprise:%s\n- Docker Hub: https://hub.docker.com/r/%s/n8n-chinese-enterprise\n- 说明: 企业版包含所有企业级功能（通过 Mock 激活，仅供学习测试）\n\n## 使用方法\n\n### 社区版（官方源）- 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese:%s\n```\n\n### 社区版（国内源）- 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese-cn:%s\n```\n\n### 企业版 - 从 Docker Hub 拉取\n```bash\ndocker run -d --name n8n-enterprise \\\n  -p 5678:5678 \\\n  -v n8n_data:/home/node/.n8n \\\n  %s/n8n-chinese-enterprise:%s\n```\n\n### 离线导入（下载下方 tar.gz 文件）\n\n**社区版（官方源）**:\n1. 下载 n8n-chinese-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-%s.tar.gz\n   ```\n\n**社区版（国内源）**:\n1. 下载 n8n-chinese-cn-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-cn-%s.tar.gz\n   ```\n\n**企业版**:\n1. 下载 n8n-chinese-enterprise-%s.tar.gz\n2. 直接导入镜像：\n   ```bash\n   docker load -i n8n-chinese-enterprise-%s.tar.gz\n   ```\n' \
-              "${N8N_VERSION}" \
-              "${DOCKER_USER}" "${N8N_VERSION}" "${DOCKER_USER}" \
-              "${DOCKER_USER}" "${N8N_VERSION}" "${DOCKER_USER}" \
-              "${DOCKER_USER}" "${N8N_VERSION}" "${DOCKER_USER}" \
-              "${DOCKER_USER}" "${N8N_VERSION}" \
-              "${DOCKER_USER}" "${N8N_VERSION}" \
-              "${DOCKER_USER}" "${N8N_VERSION}" \
-              "${N8N_VERSION}" "${N8N_VERSION}" \
-              "${N8N_VERSION}" "${N8N_VERSION}" \
-              "${N8N_VERSION}" "${N8N_VERSION}" \
-              > "${NOTES_FILE}"
+
+            # 写入标题
+            {
+              echo "## n8n 中文版 Docker 镜像 v${N8N_VERSION}"
+              echo ""
+              echo "### 镜像版本说明"
+              echo ""
+            } > "${NOTES_FILE}"
+
+            # 根据实际存在的文件添加版本说明
+            echo "**社区版（官方源）**" >> "${NOTES_FILE}"
+            {
+              echo "- 镜像: ${DOCKER_USER}/n8n-chinese:${N8N_VERSION}"
+              echo "- Docker Hub: https://hub.docker.com/r/${DOCKER_USER}/n8n-chinese"
+              echo "- 特点: 使用官方 npm 源构建"
+              echo ""
+            } >> "${NOTES_FILE}"
+
+            if [ "$COMMUNITY_CN_FILES_EXIST" = true ]; then
+              echo "**社区版（国内源）🇨🇳**" >> "${NOTES_FILE}"
+              {
+                echo "- 镜像: ${DOCKER_USER}/n8n-chinese-cn:${N8N_VERSION}"
+                echo "- Docker Hub: https://hub.docker.com/r/${DOCKER_USER}/n8n-chinese-cn"
+                echo "- 特点: 使用国内 npm 镜像源（registry.npmmirror.com）构建，国内用户推荐"
+                echo ""
+              } >> "${NOTES_FILE}"
+            fi
+
+            if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
+              echo "**企业版**" >> "${NOTES_FILE}"
+              {
+                echo "- 镜像: ${DOCKER_USER}/n8n-chinese-enterprise:${N8N_VERSION}"
+                echo "- Docker Hub: https://hub.docker.com/r/${DOCKER_USER}/n8n-chinese-enterprise"
+                echo "- 说明: 企业版包含所有企业级功能（通过 Mock 激活，仅供学习测试）"
+                echo ""
+              } >> "${NOTES_FILE}"
+            fi
+
+            # 添加使用方法
+            {
+              echo "## 使用方法"
+              echo ""
+              echo "### 社区版（官方源）- 从 Docker Hub 拉取"
+              echo '```bash'
+              echo "docker run -d --name n8n \\"
+              echo "  -p 5678:5678 \\"
+              echo "  -v n8n_data:/home/node/.n8n \\"
+              echo "  ${DOCKER_USER}/n8n-chinese:${N8N_VERSION}"
+              echo '```'
+              echo ""
+            } >> "${NOTES_FILE}"
+
+            if [ "$COMMUNITY_CN_FILES_EXIST" = true ]; then
+              {
+                echo "### 社区版（国内源）- 从 Docker Hub 拉取"
+                echo '```bash'
+                echo "docker run -d --name n8n \\"
+                echo "  -p 5678:5678 \\"
+                echo "  -v n8n_data:/home/node/.n8n \\"
+                echo "  ${DOCKER_USER}/n8n-chinese-cn:${N8N_VERSION}"
+                echo '```'
+                echo ""
+              } >> "${NOTES_FILE}"
+            fi
+
+            if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
+              {
+                echo "### 企业版 - 从 Docker Hub 拉取"
+                echo '```bash'
+                echo "docker run -d --name n8n-enterprise \\"
+                echo "  -p 5678:5678 \\"
+                echo "  -v n8n_data:/home/node/.n8n \\"
+                echo "  ${DOCKER_USER}/n8n-chinese-enterprise:${N8N_VERSION}"
+                echo '```'
+                echo ""
+              } >> "${NOTES_FILE}"
+            fi
+
+            # 添加离线导入说明
+            {
+              echo "### 离线导入（下载下方 tar.gz 文件）"
+              echo ""
+              echo "**社区版（官方源）**:"
+              echo "1. 下载 n8n-chinese-${N8N_VERSION}.tar.gz"
+              echo "2. 直接导入镜像："
+              echo '   ```bash'
+              echo "   docker load -i n8n-chinese-${N8N_VERSION}.tar.gz"
+              echo '   ```'
+              echo ""
+            } >> "${NOTES_FILE}"
+
+            if [ "$COMMUNITY_CN_FILES_EXIST" = true ]; then
+              {
+                echo "**社区版（国内源）**:"
+                echo "1. 下载 n8n-chinese-cn-${N8N_VERSION}.tar.gz"
+                echo "2. 直接导入镜像："
+                echo '   ```bash'
+                echo "   docker load -i n8n-chinese-cn-${N8N_VERSION}.tar.gz"
+                echo '   ```'
+                echo ""
+              } >> "${NOTES_FILE}"
+            fi
+
+            if [ "$ENTERPRISE_FILES_EXIST" = true ]; then
+              {
+                echo "**企业版**:"
+                echo "1. 下载 n8n-chinese-enterprise-${N8N_VERSION}.tar.gz"
+                echo "2. 直接导入镜像："
+                echo '   ```bash'
+                echo "   docker load -i n8n-chinese-enterprise-${N8N_VERSION}.tar.gz"
+                echo '   ```'
+                echo ""
+              } >> "${NOTES_FILE}"
+            fi
 
             # 构建上传文件列表
             UPLOAD_FILES=(
