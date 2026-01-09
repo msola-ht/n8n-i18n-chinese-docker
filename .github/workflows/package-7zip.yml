@@ -249,7 +249,7 @@ jobs:
         if: steps.check_release.outputs.need_images == 'true'
         env:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
-          INCLUDE_POSTGRES: ${{ steps.pull_images.outputs.has_postgres || github.event.inputs.include_postgres || 'true' }}
+          INCLUDE_POSTGRES: ${{ steps.download_images.outputs.has_postgres || github.event.inputs.include_postgres || 'true' }}
           ARCHIVE_NAME: ${{ steps.package.outputs.archive_name }}
           DOCKER_USER: ${{ secrets.DOCKERHUB_USERNAME }}
         run: |
@@ -438,31 +438,60 @@ jobs:
           UPSTREAM_TAG: ${{ steps.get_n8n_version.outputs.tag }}
           ARCHIVE_NAME: ${{ steps.package.outputs.archive_name }}
         run: |
+          echo "📤 开始上传 7zip 压缩包到发行版..."
+          echo "压缩包名称: ${ARCHIVE_NAME}"
+          echo "目标 Release: ${UPSTREAM_TAG}"
+
+          # 检查文件是否存在
+          if [ ! -f "${ARCHIVE_NAME}" ]; then
+            echo "❌ 错误：压缩包文件不存在: ${ARCHIVE_NAME}"
+            exit 1
+          fi
+
+          echo "✅ 压缩包文件存在，大小: $(du -h "${ARCHIVE_NAME}" | cut -f1)"
+
           # 检查是否已存在 Release
           RELEASE_EXISTS=false
           if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
             RELEASE_EXISTS=true
-            echo "Release ${UPSTREAM_TAG} 已存在，将添加 7zip 压缩包..."
+            echo "✅ Release ${UPSTREAM_TAG} 已存在"
           else
-            echo "Release ${UPSTREAM_TAG} 不存在，将创建新 Release..."
+            echo "✅ Release ${UPSTREAM_TAG} 不存在，将创建新 Release"
           fi
 
           if [ "$RELEASE_EXISTS" = true ]; then
             # 删除旧的 7zip 文件（如果存在）
+            echo "🔍 检查并删除旧的文件..."
             OLD_7Z_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | endswith("-镜像.7z")) | .name' 2>/dev/null || echo "")
             if [ -n "$OLD_7Z_ASSET" ]; then
               echo "$OLD_7Z_ASSET" | while read -r asset; do
                 [ -n "$asset" ] && gh release delete-asset "${UPSTREAM_TAG}" "$asset" --yes 2>/dev/null || true
               done
+              echo "✅ 已删除旧的 7zip 文件"
             fi
 
-            # 上传 7zip 压缩包和说明文档
-            echo "上传 7zip 压缩包到 Release ${UPSTREAM_TAG}..."
+            # 删除旧的 README 文件（如果存在）
+            OLD_README=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name == "README-7zip.md") | .name' 2>/dev/null || echo "")
+            if [ -n "$OLD_README" ]; then
+              echo "🗑️ 删除旧的 README-7zip.md..."
+              gh release delete-asset "${UPSTREAM_TAG}" "README-7zip.md" --yes 2>/dev/null || true
+              echo "✅ 已删除旧的 README 文件"
+            fi
+
+            # 上传新的 7zip 压缩包和说明文档
+            echo "📤 上传文件到 Release..."
             gh release upload "${UPSTREAM_TAG}" \
               "${ARCHIVE_NAME}" \
-              README-7zip.md || echo "文件上传失败"
+              README-7zip.md
+
+            if [ $? -eq 0 ]; then
+              echo "✅ 文件上传成功"
+            else
+              echo "❌ 文件上传失败"
+              exit 1
+            fi
           else
-            echo "创建新的 Release ${UPSTREAM_TAG}..."
+            echo "📝 创建新的 Release..."
 
             # 创建 Release Notes
             echo "## n8n 镜像 7zip 压缩包" > /tmp/7zip-release-notes.txt
@@ -487,10 +516,20 @@ jobs:
               "${ARCHIVE_NAME}" \
               README-7zip.md \
               --title "n8n 镜像 7zip 压缩包 v${N8N_VERSION}" \
-              --notes-file /tmp/7zip-release-notes.txt || echo "Release 创建失败"
+              --notes-file /tmp/7zip-release-notes.txt
+
+            if [ $? -eq 0 ]; then
+              echo "✅ Release 创建并上传成功"
+            else
+              echo "❌ Release 创建失败"
+              exit 1
+            fi
           fi
 
+          echo ""
+          echo "=========================================="
           echo "✅ 7zip 压缩包已成功上传到 Release ${UPSTREAM_TAG}"
+          echo "=========================================="
 
       - name: 更新 Docker_N8N 目录的 .env 文件
         if: steps.check_release.outputs.need_docker_n8n == 'true'
