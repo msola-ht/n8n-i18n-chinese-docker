@@ -156,58 +156,50 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full
 
-      - name: 设置 Docker Buildx
-        if: steps.check_release.outputs.need_images == 'true'
-        uses: docker/setup-buildx-action@v3
-
-      - name: 拉取所需镜像
-        id: pull_images
+      - name: 从发行版下载镜像文件
+        id: download_images
         if: steps.check_release.outputs.need_images == 'true'
         env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
+          UPSTREAM_TAG: ${{ steps.get_n8n_version.outputs.tag }}
           INCLUDE_POSTGRES: ${{ github.event.inputs.include_postgres || 'true' }}
         run: |
-          echo "📥 开始拉取所需镜像..."
+          echo "📦 从发行版下载镜像文件..."
+          mkdir -p docker-export
 
-          echo "正在拉取 CN 镜像..."
-          docker pull ${DOCKERHUB_USERNAME}/n8n-chinese-cn:${N8N_VERSION}
-          echo "✅ CN 镜像拉取成功"
+          # 从发行版下载 CN 镜像
+          echo "📥 下载 n8n-chinese-cn-${N8N_VERSION}.tar.gz..."
+          gh release download "${UPSTREAM_TAG}" --pattern "n8n-chinese-cn-${N8N_VERSION}.tar.gz" --dir docker-export/
+          echo "✅ CN 镜像下载完成"
 
-          echo "正在拉取 n8n-runners 镜像..."
-          docker pull n8nio/runners:${N8N_VERSION}
-          echo "✅ n8n-runners 镜像拉取成功"
+          # 从发行版下载 n8n-runners（如果存在）
+          if gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' | grep -q "n8n-runners-${N8N_VERSION}.tar"; then
+            echo "📥 下载 n8n-runners-${N8N_VERSION}.tar..."
+            gh release download "${UPSTREAM_TAG}" --pattern "n8n-runners-${N8N_VERSION}.tar" --dir docker-export/
+            echo "✅ n8n-runners 镜像下载完成"
+            echo "has_runners_tar=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "⚠️ 发行版中没有 n8n-runners，跳过"
+            echo "has_runners_tar=false" >> "$GITHUB_OUTPUT"
+          fi
 
+          # 从发行版下载 PostgreSQL（如果存在）
           if [ "$INCLUDE_POSTGRES" = "true" ]; then
-            echo "正在拉取 PostgreSQL 镜像..."
-            docker pull postgres:16
-            echo "✅ PostgreSQL 镜像拉取成功"
-            echo "has_postgres=true" >> "$GITHUB_OUTPUT"
+            if gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' | grep -q "postgres-16.tar"; then
+              echo "📥 下载 postgres-16.tar..."
+              gh release download "${UPSTREAM_TAG}" --pattern "postgres-16.tar" --dir docker-export/
+              echo "✅ PostgreSQL 镜像下载完成"
+              echo "has_postgres=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "⚠️ 发行版中没有 PostgreSQL，跳过"
+              echo "has_postgres=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "has_postgres=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: 导出镜像为 tar 格式
-        if: steps.check_release.outputs.need_images == 'true'
-        env:
-          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
-          INCLUDE_POSTGRES: ${{ steps.pull_images.outputs.has_postgres || github.event.inputs.include_postgres || 'true' }}
-        run: |
-          echo "📦 开始导出镜像..."
-          mkdir -p docker-export
-
-          echo "正在导出 CN 镜像..."
-          docker save ${DOCKERHUB_USERNAME}/n8n-chinese-cn:${N8N_VERSION} -o docker-export/n8n-chinese-cn.tar
-          echo "✅ CN 镜像导出完成"
-
-          echo "正在导出 n8n-runners 镜像..."
-          docker save n8nio/runners:${N8N_VERSION} -o docker-export/n8n-runners.tar
-          echo "✅ n8n-runners 镜像导出完成"
-
-          if [ "$INCLUDE_POSTGRES" = "true" ]; then
-            echo "正在导出 PostgreSQL 镜像..."
-            docker save postgres:16 -o docker-export/postgres-16.tar
-            echo "✅ PostgreSQL 镜像导出完成"
-          fi
+          echo "✅ 所需镜像文件下载完成"
 
       - name: 使用 7zip 打包镜像
         id: package
@@ -226,8 +218,11 @@ jobs:
           echo "📦 开始使用 7zip 压缩镜像..."
           echo "压缩包名称: ${ARCHIVE_NAME}"
 
-          # 使用 7zip 压缩，使用最大压缩级别
-          7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on "${ARCHIVE_NAME}" docker-export/*.tar
+          # 进入 docker-export 目录并打包所有镜像文件（tar 和 tar.gz）
+          cd docker-export
+          7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on "../${ARCHIVE_NAME}" *.tar *.tar.gz 2>/dev/null || \
+          7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on "../${ARCHIVE_NAME}" *.tar
+          cd ..
 
           echo "✅ 压缩完成"
           echo "📊 压缩包大小: $(du -h "${ARCHIVE_NAME}" | cut -f1)"
@@ -276,17 +271,17 @@ jobs:
           echo "" >> README-7zip.md
           echo "### 2. 导入镜像" >> README-7zip.md
           echo "" >> README-7zip.md
-          echo "解压后，导入 Docker 镜像：" >> README-7zip.md
+          echo "解压后，直接在当前目录导入 Docker 镜像：" >> README-7zip.md
           echo "" >> README-7zip.md
           echo '```bash' >> README-7zip.md
-          echo "# 导入 CN 镜像" >> README-7zip.md
-          echo "docker load -i docker-export/n8n-chinese-cn.tar" >> README-7zip.md
+          echo "# 导入 CN 镜像（tar.gz 格式）" >> README-7zip.md
+          echo "docker load < n8n-chinese-cn-${N8N_VERSION}.tar.gz" >> README-7zip.md
           echo "" >> README-7zip.md
           echo "# 导入 n8n-runners 镜像" >> README-7zip.md
-          echo "docker load -i docker-export/n8n-runners.tar" >> README-7zip.md
+          echo "docker load -i n8n-runners-${N8N_VERSION}.tar" >> README-7zip.md
           echo "" >> README-7zip.md
           echo "# 导入 PostgreSQL 镜像" >> README-7zip.md
-          echo "docker load -i docker-export/postgres-16.tar" >> README-7zip.md
+          echo "docker load -i postgres-16.tar" >> README-7zip.md
           echo '```' >> README-7zip.md
           echo "" >> README-7zip.md
           echo "### 3. 验证镜像" >> README-7zip.md
@@ -417,7 +412,7 @@ jobs:
           echo "- SQLite：适合开发测试，配置简单，单容器即可" >> README-7zip.md
           echo "- PostgreSQL：适合生产环境，性能更好，支持并发访问" >> README-7zip.md
 
-      - name: 上传镜像压缩包到 GitHub Releases
+      - name: 上传 7zip 压缩包到 GitHub Releases
         if: steps.check_release.outputs.need_images == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -443,11 +438,11 @@ jobs:
               done
             fi
 
-            # 上传新的 7zip 压缩包和说明文档
+            # 上传 7zip 压缩包和说明文档
             echo "上传 7zip 压缩包到 Release ${UPSTREAM_TAG}..."
             gh release upload "${UPSTREAM_TAG}" \
               "${ARCHIVE_NAME}" \
-              README-7zip.md || echo "7zip 压缩包上传失败"
+              README-7zip.md || echo "文件上传失败"
           else
             echo "创建新的 Release ${UPSTREAM_TAG}..."
 
