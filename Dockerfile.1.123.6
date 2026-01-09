@@ -1,0 +1,12 @@
+# 声明一个构建参数
+ARG N8N_VERSION=1.123.6
+# 使用基础镜像
+FROM n8nio/n8n:${N8N_VERSION}
+# 必须分行写：先切换用户，再执行命令
+USER root
+# 安装 ffmpeg (使用 --no-cache 不需要手动 apk update 和清理缓存)
+RUN apk add --no-cache ffmpeg
+# 切换回 node 用户以保证安全
+USER node
+# 复制中文 UI 文件
+COPY ./1.123.6/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
