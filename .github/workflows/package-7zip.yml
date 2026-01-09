@@ -62,61 +62,6 @@ jobs:
           echo "tag=$TAG_REF" >> "$GITHUB_OUTPUT"
           echo "使用 n8n 版本: ${N8N_VERSION}"
 
-      - name: 设置 Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 拉取所需镜像
-        id: pull_images
-        env:
-          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
-          INCLUDE_POSTGRES: ${{ github.event.inputs.include_postgres || 'true' }}
-        run: |
-          echo "📥 开始拉取所需镜像..."
-
-          echo "正在拉取 CN 镜像..."
-          docker pull ${DOCKERHUB_USERNAME}/n8n-chinese-cn:${N8N_VERSION}
-          echo "✅ CN 镜像拉取成功"
-
-          echo "正在拉取 n8n-runners 镜像..."
-          docker pull n8nio/runners:${N8N_VERSION}
-          echo "✅ n8n-runners 镜像拉取成功"
-
-          if [ "$INCLUDE_POSTGRES" = "true" ]; then
-            echo "正在拉取 PostgreSQL 镜像..."
-            docker pull postgres:16
-            echo "✅ PostgreSQL 镜像拉取成功"
-            echo "has_postgres=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_postgres=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: 导出镜像为 tar 格式
-        env:
-          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
-          INCLUDE_POSTGRES: ${{ steps.pull_images.outputs.has_postgres || github.event.inputs.include_postgres || 'true' }}
-        run: |
-          echo "📦 开始导出镜像..."
-          mkdir -p docker-export
-
-          echo "正在导出 CN 镜像..."
-          docker save ${DOCKERHUB_USERNAME}/n8n-chinese-cn:${N8N_VERSION} -o docker-export/n8n-chinese-cn.tar
-          echo "✅ CN 镜像导出完成"
-
-          echo "正在导出 n8n-runners 镜像..."
-          docker save n8nio/runners:${N8N_VERSION} -o docker-export/n8n-runners.tar
-          echo "✅ n8n-runners 镜像导出完成"
-
-          if [ "$INCLUDE_POSTGRES" = "true" ]; then
-            echo "正在导出 PostgreSQL 镜像..."
-            docker save postgres:16 -o docker-export/postgres-16.tar
-            echo "✅ PostgreSQL 镜像导出完成"
-          fi
-
-      - name: 安装 7zip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-
       - name: 检查 Release 是否已存在并判断是否需要打包
         id: check_release
         env:
@@ -131,6 +76,9 @@ jobs:
           IMAGES_ARCHIVE="${DATE_FORMAT}-images-${N8N_VERSION}-镜像.7z"
           DOCKER_N8N_ARCHIVE="${DATE_FORMAT}-Docker_N8N-${N8N_VERSION}.7z"
 
+          # 旧格式的文件名（兼容性检查）
+          IMAGES_ARCHIVE_OLD="${DATE_FORMAT}-images-${N8N_VERSION}-.7z"
+
           # 检查 Release 是否存在
           if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
             echo "release_exists=true" >> "$GITHUB_OUTPUT"
@@ -138,6 +86,14 @@ jobs:
 
             # 获取 Release 中的所有文件
             ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+
+            # 检查旧格式的镜像压缩包是否存在
+            if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE_OLD}"; then
+              echo "⚠️ 发现旧格式文件: ${IMAGES_ARCHIVE_OLD}"
+              echo "正在删除旧格式文件..."
+              gh release delete-asset "${UPSTREAM_TAG}" "${IMAGES_ARCHIVE_OLD}" --yes 2>/dev/null || true
+              echo "✅ 已删除旧格式文件"
+            fi
 
             # 检查镜像压缩包是否存在
             if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}"; then
@@ -193,6 +149,65 @@ jobs:
           # 输出文件名供后续步骤使用
           echo "images_archive=${IMAGES_ARCHIVE}" >> "$GITHUB_OUTPUT"
           echo "docker_n8n_archive=${DOCKER_N8N_ARCHIVE}" >> "$GITHUB_OUTPUT"
+
+      - name: 安装 7zip
+        if: steps.check_release.outputs.need_images == 'true' || steps.check_release.outputs.need_docker_n8n == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full
+
+      - name: 设置 Docker Buildx
+        if: steps.check_release.outputs.need_images == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: 拉取所需镜像
+        id: pull_images
+        if: steps.check_release.outputs.need_images == 'true'
+        env:
+          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
+          INCLUDE_POSTGRES: ${{ github.event.inputs.include_postgres || 'true' }}
+        run: |
+          echo "📥 开始拉取所需镜像..."
+
+          echo "正在拉取 CN 镜像..."
+          docker pull ${DOCKERHUB_USERNAME}/n8n-chinese-cn:${N8N_VERSION}
+          echo "✅ CN 镜像拉取成功"
+
+          echo "正在拉取 n8n-runners 镜像..."
+          docker pull n8nio/runners:${N8N_VERSION}
+          echo "✅ n8n-runners 镜像拉取成功"
+
+          if [ "$INCLUDE_POSTGRES" = "true" ]; then
+            echo "正在拉取 PostgreSQL 镜像..."
+            docker pull postgres:16
+            echo "✅ PostgreSQL 镜像拉取成功"
+            echo "has_postgres=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_postgres=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 导出镜像为 tar 格式
+        if: steps.check_release.outputs.need_images == 'true'
+        env:
+          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
+          INCLUDE_POSTGRES: ${{ steps.pull_images.outputs.has_postgres || github.event.inputs.include_postgres || 'true' }}
+        run: |
+          echo "📦 开始导出镜像..."
+          mkdir -p docker-export
+
+          echo "正在导出 CN 镜像..."
+          docker save ${DOCKERHUB_USERNAME}/n8n-chinese-cn:${N8N_VERSION} -o docker-export/n8n-chinese-cn.tar
+          echo "✅ CN 镜像导出完成"
+
+          echo "正在导出 n8n-runners 镜像..."
+          docker save n8nio/runners:${N8N_VERSION} -o docker-export/n8n-runners.tar
+          echo "✅ n8n-runners 镜像导出完成"
+
+          if [ "$INCLUDE_POSTGRES" = "true" ]; then
+            echo "正在导出 PostgreSQL 镜像..."
+            docker save postgres:16 -o docker-export/postgres-16.tar
+            echo "✅ PostgreSQL 镜像导出完成"
+          fi
 
       - name: 使用 7zip 打包镜像
         id: package
