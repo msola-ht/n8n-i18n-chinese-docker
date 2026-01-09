@@ -1,21 +1,8 @@
-# 声明构建参数，它们的值将由 GitHub Actions 传入
+# 声明一个构建参数，它的值将由 GitHub Actions 传入
 ARG N8N_VERSION=latest
-ARG NPM_REGISTRY=https://registry.npmjs.org
 
 # 使用传入的版本号作为基础镜像
 FROM n8nio/n8n:${N8N_VERSION}
 
-# 重新声明构建参数（FROM 会重置 ARG 作用域）
-ARG NPM_REGISTRY=https://registry.npmjs.org
-
-USER root
-
-# 配置 NPM 源（全局配置，对所有用户生效）
-RUN npm config set registry ${NPM_REGISTRY} --global && \
-    npm config get registry && \
-    cat /usr/local/etc/npmrc
-
 # 复制中文 UI 文件
 COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
-
-USER node

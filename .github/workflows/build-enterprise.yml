@@ -291,7 +291,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.community
+          file: ./Dockerfile.community.cn
           push: true
           platforms: linux/amd64,linux/arm64
           tags: |
@@ -301,7 +301,6 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             N8N_VERSION=${{ needs.check.outputs.n8n_version }}
-            NPM_REGISTRY=https://registry.npmmirror.com
 
       - name: 导出社区版国内源镜像
         run: |
@@ -379,7 +378,7 @@ jobs:
 
           # 2. 生成 Dockerfile (使用 COPY 指令而不是内部生成)
           cat <<EOF > Dockerfile.enterprise
-          FROM $DOCKERHUB_USERNAME/n8n-chinese:${{ needs.check.outputs.n8n_version }}
+          FROM ${{ env.DOCKERHUB_USERNAME }}/n8n-chinese:${{ needs.check.outputs.n8n_version }}
           USER root
 
           # 将上面生成的 JS 文件复制到镜像中

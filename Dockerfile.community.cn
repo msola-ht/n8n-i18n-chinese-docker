@@ -1,0 +1,17 @@
+# 声明构建参数
+ARG N8N_VERSION=latest
+
+# 使用传入的版本号作为基础镜像
+FROM n8nio/n8n:${N8N_VERSION}
+
+USER root
+
+# 配置国内 NPM 源（全局配置，对所有用户生效）
+# 使用淘宝 npmmirror 镜像源，适合国内用户
+RUN npm config set registry https://registry.npmmirror.com --global && \
+    npm config get registry
+
+# 复制中文 UI 文件
+COPY src-dist/dist /usr/local/lib/node_modules/n8n/node_modules/n8n-editor-ui/dist
+
+USER node
