@@ -121,13 +121,23 @@ jobs:
               echo "所有文件已存在，跳过打包！"
               echo "=========================================="
             elif echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}"; then
-              echo "skip_images=true" >> "$GITHUB_OUTPUT"
+              # 镜像包存在，Docker_N8N 不存在
+              echo "skip_all=false" >> "$GITHUB_OUTPUT"
               echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
               echo ""
               echo "=========================================="
               echo "镜像包已存在，只需打包 Docker_N8N"
               echo "=========================================="
+            elif echo "$ASSETS" | grep -q "${DOCKER_N8N_ARCHIVE}"; then
+              # Docker_N8N 存在，镜像包不存在
+              echo "skip_all=false" >> "$GITHUB_OUTPUT"
+              echo "need_images=true" >> "$GITHUB_OUTPUT"
+              echo ""
+              echo "=========================================="
+              echo "Docker_N8N 已存在，只需打包镜像"
+              echo "=========================================="
             else
+              # 两个都不存在
               echo "skip_all=false" >> "$GITHUB_OUTPUT"
               echo "need_images=true" >> "$GITHUB_OUTPUT"
               echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
@@ -174,11 +184,15 @@ jobs:
           echo "✅ CN 镜像下载完成"
 
           # 从发行版下载 n8n-runners（如果存在）
-          if gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' | grep -q "n8n-runners-${N8N_VERSION}.tar"; then
-            echo "📥 下载 n8n-runners-${N8N_VERSION}.tar..."
-            gh release download "${UPSTREAM_TAG}" --pattern "n8n-runners-${N8N_VERSION}.tar" --dir docker-export/
-            echo "✅ n8n-runners 镜像下载完成"
-            echo "has_runners_tar=true" >> "$GITHUB_OUTPUT"
+          if gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' | grep -q "n8n-runners-${N8N_VERSION}.tar.gz"; then
+            echo "📥 下载 n8n-runners-${N8N_VERSION}.tar.gz..."
+            if gh release download "${UPSTREAM_TAG}" --pattern "n8n-runners-${N8N_VERSION}.tar.gz" --dir docker-export/ 2>/dev/null; then
+              echo "✅ n8n-runners 镜像下载完成"
+              echo "has_runners_tar=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "⚠️ n8n-runners 下载失败，跳过"
+              echo "has_runners_tar=false" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "⚠️ 发行版中没有 n8n-runners，跳过"
             echo "has_runners_tar=false" >> "$GITHUB_OUTPUT"
@@ -188,9 +202,13 @@ jobs:
           if [ "$INCLUDE_POSTGRES" = "true" ]; then
             if gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' | grep -q "postgres-16.tar"; then
               echo "📥 下载 postgres-16.tar..."
-              gh release download "${UPSTREAM_TAG}" --pattern "postgres-16.tar" --dir docker-export/
-              echo "✅ PostgreSQL 镜像下载完成"
-              echo "has_postgres=true" >> "$GITHUB_OUTPUT"
+              if gh release download "${UPSTREAM_TAG}" --pattern "postgres-16.tar" --dir docker-export/ 2>/dev/null; then
+                echo "✅ PostgreSQL 镜像下载完成"
+                echo "has_postgres=true" >> "$GITHUB_OUTPUT"
+              else
+                echo "⚠️ PostgreSQL 下载失败，跳过"
+                echo "has_postgres=false" >> "$GITHUB_OUTPUT"
+              fi
             else
               echo "⚠️ 发行版中没有 PostgreSQL，跳过"
               echo "has_postgres=false" >> "$GITHUB_OUTPUT"
@@ -277,10 +295,10 @@ jobs:
           echo "# 导入 CN 镜像（tar.gz 格式）" >> README-7zip.md
           echo "docker load < n8n-chinese-cn-${N8N_VERSION}.tar.gz" >> README-7zip.md
           echo "" >> README-7zip.md
-          echo "# 导入 n8n-runners 镜像" >> README-7zip.md
-          echo "docker load -i n8n-runners-${N8N_VERSION}.tar" >> README-7zip.md
+          echo "# 导入 n8n-runners 镜像（tar.gz 格式）" >> README-7zip.md
+          echo "docker load < n8n-runners-${N8N_VERSION}.tar.gz" >> README-7zip.md
           echo "" >> README-7zip.md
-          echo "# 导入 PostgreSQL 镜像" >> README-7zip.md
+          echo "# 导入 PostgreSQL 镜像（tar 格式，如果有）" >> README-7zip.md
           echo "docker load -i postgres-16.tar" >> README-7zip.md
           echo '```' >> README-7zip.md
           echo "" >> README-7zip.md
