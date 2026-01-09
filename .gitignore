@@ -107,6 +107,9 @@ coverage/
 .env.test.local
 .env.production.local
 
+# 但保留 Docker_N8N 目录中的 .env 文件（用于部署包）
+!Docker_N8N/.env
+
 # 配置文件
 config.local.js
 config.local.json

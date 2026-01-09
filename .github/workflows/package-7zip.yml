@@ -117,8 +117,86 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y p7zip-full
 
+      - name: 检查 Release 是否已存在并判断是否需要打包
+        id: check_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
+          UPSTREAM_TAG: ${{ steps.get_n8n_version.outputs.tag }}
+        run: |
+          echo "🔍 检查 Release ${UPSTREAM_TAG} 是否已存在..."
+
+          # 生成预期的文件名
+          DATE_FORMAT=$(date +'%y-%-m-%-d')
+          IMAGES_ARCHIVE="${DATE_FORMAT}-images-${N8N_VERSION}-镜像.7z"
+          DOCKER_N8N_ARCHIVE="${DATE_FORMAT}-Docker_N8N-${N8N_VERSION}.7z"
+
+          # 检查 Release 是否存在
+          if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
+            echo "release_exists=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Release ${UPSTREAM_TAG} 已存在"
+
+            # 获取 Release 中的所有文件
+            ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+
+            # 检查镜像压缩包是否存在
+            if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}"; then
+              echo "images_exists=true" >> "$GITHUB_OUTPUT"
+              echo "  ✓ 镜像压缩包已存在: ${IMAGES_ARCHIVE}"
+            else
+              echo "images_exists=false" >> "$GITHUB_OUTPUT"
+              echo "  ✗ 镜像压缩包不存在: ${IMAGES_ARCHIVE}"
+            fi
+
+            # 检查 Docker_N8N 压缩包是否存在
+            if echo "$ASSETS" | grep -q "${DOCKER_N8N_ARCHIVE}"; then
+              echo "docker_n8n_exists=true" >> "$GITHUB_OUTPUT"
+              echo "  ✓ Docker_N8N 压缩包已存在: ${DOCKER_N8N_ARCHIVE}"
+            else
+              echo "docker_n8n_exists=false" >> "$GITHUB_OUTPUT"
+              echo "  ✗ Docker_N8N 压缩包不存在: ${DOCKER_N8N_ARCHIVE}"
+            fi
+
+            # 判断是否需要打包
+            if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}" && echo "$ASSETS" | grep -q "${DOCKER_N8N_ARCHIVE}"; then
+              echo "skip_all=true" >> "$GITHUB_OUTPUT"
+              echo ""
+              echo "=========================================="
+              echo "所有文件已存在，跳过打包！"
+              echo "=========================================="
+            elif echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}"; then
+              echo "skip_images=true" >> "$GITHUB_OUTPUT"
+              echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
+              echo ""
+              echo "=========================================="
+              echo "镜像包已存在，只需打包 Docker_N8N"
+              echo "=========================================="
+            else
+              echo "skip_all=false" >> "$GITHUB_OUTPUT"
+              echo "need_images=true" >> "$GITHUB_OUTPUT"
+              echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
+              echo ""
+              echo "=========================================="
+              echo "所有文件都不存在，需要打包"
+              echo "=========================================="
+            fi
+          else
+            echo "release_exists=false" >> "$GITHUB_OUTPUT"
+            echo "images_exists=false" >> "$GITHUB_OUTPUT"
+            echo "docker_n8n_exists=false" >> "$GITHUB_OUTPUT"
+            echo "skip_all=false" >> "$GITHUB_OUTPUT"
+            echo "need_images=true" >> "$GITHUB_OUTPUT"
+            echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Release ${UPSTREAM_TAG} 不存在，需要创建并打包所有文件"
+          fi
+
+          # 输出文件名供后续步骤使用
+          echo "images_archive=${IMAGES_ARCHIVE}" >> "$GITHUB_OUTPUT"
+          echo "docker_n8n_archive=${DOCKER_N8N_ARCHIVE}" >> "$GITHUB_OUTPUT"
+
       - name: 使用 7zip 打包镜像
         id: package
+        if: steps.check_release.outputs.need_images == 'true'
         env:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
         run: |
@@ -140,6 +218,7 @@ jobs:
           echo "📊 压缩包大小: $(du -h "${ARCHIVE_NAME}" | cut -f1)"
 
       - name: 创建使用说明文档
+        if: steps.check_release.outputs.need_images == 'true'
         env:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
           INCLUDE_POSTGRES: ${{ steps.pull_images.outputs.has_postgres || github.event.inputs.include_postgres || 'true' }}
@@ -323,7 +402,8 @@ jobs:
           echo "- SQLite：适合开发测试，配置简单，单容器即可" >> README-7zip.md
           echo "- PostgreSQL：适合生产环境，性能更好，支持并发访问" >> README-7zip.md
 
-      - name: 上传到 GitHub Releases
+      - name: 上传镜像压缩包到 GitHub Releases
+        if: steps.check_release.outputs.need_images == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
@@ -385,6 +465,7 @@ jobs:
           echo "✅ 7zip 压缩包已成功上传到 Release ${UPSTREAM_TAG}"
 
       - name: 更新 Docker_N8N 目录的 .env 文件
+        if: steps.check_release.outputs.need_docker_n8n == 'true'
         env:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
         run: |
@@ -405,6 +486,7 @@ jobs:
 
       - name: 打包 Docker_N8N 目录
         id: package_docker_n8n
+        if: steps.check_release.outputs.need_docker_n8n == 'true'
         env:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
         run: |
@@ -425,6 +507,7 @@ jobs:
           echo "📊 压缩包大小: $(du -h "${ARCHIVE_NAME}" | cut -f1)"
 
       - name: 创建 Docker_N8N 说明文档
+        if: steps.check_release.outputs.need_docker_n8n == 'true'
         env:
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
           ARCHIVE_NAME: ${{ steps.package_docker_n8n.outputs.archive_name }}
@@ -499,6 +582,7 @@ jobs:
           echo "A: 修改 .env 中的 N8N_VERSION，然后运行 \`docker-compose pull && docker-compose up -d\`" >> README-Docker_N8N.md
 
       - name: 上传 Docker_N8N 到 GitHub Releases
+        if: steps.check_release.outputs.need_docker_n8n == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           N8N_VERSION: ${{ steps.get_n8n_version.outputs.n8n_version }}
@@ -553,17 +637,58 @@ jobs:
           echo "✅ Docker_N8N 压缩包已成功上传到 Release ${UPSTREAM_TAG}"
 
       - name: 输出完成信息
+        if: steps.check_release.outputs.skip_all != 'true'
         run: |
-          echo "✅ 所有打包任务完成"
+          echo "=========================================="
+          echo "✅ 打包任务完成"
+          echo "=========================================="
+          echo ""
+
+          # 输出镜像压缩包信息
+          if [ "${{ steps.check_release.outputs.need_images }}" = "true" ]; then
+            echo "📦 镜像压缩包:"
+            echo "   文件名: ${{ steps.check_release.outputs.images_archive }}"
+            echo "   版本: ${{ steps.get_n8n_version.outputs.n8n_version }}"
+            echo "   状态: ✅ 已打包并上传"
+          else
+            echo "📦 镜像压缩包:"
+            echo "   文件名: ${{ steps.check_release.outputs.images_archive }}"
+            echo "   版本: ${{ steps.get_n8n_version.outputs.n8n_version }}"
+            echo "   状态: ⏭️ 已存在，跳过打包"
+          fi
+          echo ""
+
+          # 输出 Docker_N8N 部署包信息
+          if [ "${{ steps.check_release.outputs.need_docker_n8n }}" = "true" ]; then
+            echo "📦 Docker_N8N 部署包:"
+            echo "   文件名: ${{ steps.check_release.outputs.docker_n8n_archive }}"
+            echo "   版本: ${{ steps.get_n8n_version.outputs.n8n_version }}"
+            echo "   状态: ✅ 已打包并上传"
+          else
+            echo "📦 Docker_N8N 部署包:"
+            echo "   文件名: ${{ steps.check_release.outputs.docker_n8n_archive }}"
+            echo "   版本: ${{ steps.get_n8n_version.outputs.n8n_version }}"
+            echo "   状态: ⏭️ 已存在，跳过打包"
+          fi
+          echo ""
+
+          echo "🔗 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.get_n8n_version.outputs.tag }}"
+          echo ""
+
+      - name: 输出跳过信息
+        if: steps.check_release.outputs.skip_all == 'true'
+        run: |
+          echo "=========================================="
+          echo "⏭️ 所有文件已存在，跳过打包"
+          echo "=========================================="
           echo ""
           echo "📦 镜像压缩包:"
-          echo "   文件名: ${{ steps.package.outputs.archive_name }}"
-          echo "   日期: ${{ steps.package.outputs.date_format }}"
-          echo "   版本: ${{ steps.get_n8n_version.outputs.n8n_version }}"
+          echo "   文件名: ${{ steps.check_release.outputs.images_archive }}"
+          echo "   状态: ✅ 已存在"
           echo ""
           echo "📦 Docker_N8N 部署包:"
-          echo "   文件名: ${{ steps.package_docker_n8n.outputs.archive_name }}"
-          echo "   版本: ${{ steps.get_n8n_version.outputs.n8n_version }}"
+          echo "   文件名: ${{ steps.check_release.outputs.docker_n8n_archive }}"
+          echo "   状态: ✅ 已存在"
           echo ""
           echo "🔗 Release: ${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.get_n8n_version.outputs.tag }}"
-          echo "💾 所有压缩包已上传到 GitHub Releases"
+          echo ""
