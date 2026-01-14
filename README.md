@@ -7,7 +7,7 @@
 
 自动构建包含完整中文语言包的 n8n Docker 镜像
 
-**当前版本**: `2.3.4`
+**当前版本**: `2.3.5`
 
 ## 特性
 
@@ -67,9 +67,9 @@ docker run -d \
 
 | 镜像 | 标签 | Docker Hub | 适用场景 |
 |------|------|------------|----------|
-| 社区版（官方源） | `latest` 或 `2.3.4` | [lunare/n8n-chinese](https://hub.docker.com/r/lunare/n8n-chinese) | 国际用户 |
-| 社区版（国内源）🇨🇳 | `latest` 或 `2.3.4` | [lunare/n8n-chinese-cn](https://hub.docker.com/r/lunare/n8n-chinese-cn) | 国内用户（推荐） |
-| 企业版 | `latest` 或 `2.3.4` | [lunare/n8n-chinese-enterprise](https://hub.docker.com/r/lunare/n8n-chinese-enterprise) | 学习测试 |
+| 社区版（官方源） | `latest` 或 `2.3.5` | [lunare/n8n-chinese](https://hub.docker.com/r/lunare/n8n-chinese) | 国际用户 |
+| 社区版（国内源）🇨🇳 | `latest` 或 `2.3.5` | [lunare/n8n-chinese-cn](https://hub.docker.com/r/lunare/n8n-chinese-cn) | 国内用户（推荐） |
+| 企业版 | `latest` 或 `2.3.5` | [lunare/n8n-chinese-enterprise](https://hub.docker.com/r/lunare/n8n-chinese-enterprise) | 学习测试 |
 
 ## 镜像说明
 
@@ -88,14 +88,14 @@ docker run -d \
 
 从 [GitHub Releases](https://github.com/msola-ht/n8n-i18n-chinese-docker/releases) 下载镜像文件：
 
-- 社区版：`n8n-chinese-2.3.4.tar.gz`
-- 企业版：`n8n-chinese-enterprise-2.3.4.tar.gz`
+- 社区版：`n8n-chinese-2.3.5.tar.gz`
+- 企业版：`n8n-chinese-enterprise-2.3.5.tar.gz`
 
 国内源版本的镜像可在 [GitHub Actions Artifacts](https://github.com/msola-ht/n8n-i18n-chinese-docker/actions) 中下载。
 
 导入镜像：
 ```bash
-docker load -i n8n-chinese-2.3.4.tar.gz
+docker load -i n8n-chinese-2.3.5.tar.gz
 ```
 
 ## 相关链接
