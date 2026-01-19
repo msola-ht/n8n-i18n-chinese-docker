@@ -22,6 +22,10 @@ on:
         description: '上游标签'
         required: true
         type: string
+  workflow_run:
+    workflows: ["构建 n8n 中文社区版和企业版 Docker 镜像"]
+    types: [completed]
+    branches: [main]
 
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -29,6 +33,8 @@ env:
 
 jobs:
   package-7zip:
+    # 只在上游工作流成功完成时运行（workflow_run 触发）
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -37,9 +43,43 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v3
 
+      - name: 从上游工作流获取版本号（workflow_run 触发）
+        id: get_version_from_workflow
+        if: github.event_name == 'workflow_run'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "📥 从上游工作流获取版本信息..."
+
+          # 获取上游工作流的运行 ID
+          WORKFLOW_RUN_ID="${{ github.event.workflow_run.id }}"
+          echo "上游工作流运行 ID: ${WORKFLOW_RUN_ID}"
+
+          # 从上游工作流 check job 的输出中获取版本号
+          # 使用 GitHub API 获取 job 输出
+          N8N_VERSION=$(gh api \
+            repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs \
+            --jq '.jobs[] | select(.name == "check") | .outputs.n8n_version' | head -1)
+
+          TAG=$(gh api \
+            repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs \
+            --jq '.jobs[] | select(.name == "check") | .outputs.tag' | head -1)
+
+          if [ -z "$N8N_VERSION" ] || [ -z "$TAG" ]; then
+            echo "⚠️ 无法从上游工作流获取版本号，尝试从上游 API 获取..."
+            # 备用方案：从上游仓库 API 获取最新版本
+            latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
+            TAG=$(echo "$latest_release" | jq -r .tag_name | xargs)
+            N8N_VERSION=$(echo "${TAG#n8n@}" | xargs)
+          fi
+
+          echo "n8n_version=${N8N_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "从上游获取到版本: ${N8N_VERSION} (标签: ${TAG})"
+
       - name: 获取上游最新发布信息
         id: get_release
-        if: github.event.inputs.n8n_version == ''
+        if: github.event.inputs.n8n_version == '' && github.event_name != 'workflow_run'
         run: |
           latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
           tag=$(echo "$latest_release" | jq -r .tag_name | xargs)
@@ -50,11 +90,15 @@ jobs:
         id: get_n8n_version
         run: |
           if [ -n "${{ github.event.inputs.n8n_version }}" ]; then
-            # 使用手动输入的版本号
+            # 优先级1: 使用手动输入的版本号
             N8N_VERSION="${{ github.event.inputs.n8n_version }}"
             TAG_REF="n8n@${N8N_VERSION}"
+          elif [ -n "${{ steps.get_version_from_workflow.outputs.n8n_version }}" ]; then
+            # 优先级2: 使用从 workflow_run 获取的版本号
+            N8N_VERSION="${{ steps.get_version_from_workflow.outputs.n8n_version }}"
+            TAG_REF="${{ steps.get_version_from_workflow.outputs.tag }}"
           else
-            # 从上游获取的标签中提取
+            # 优先级3: 从上游获取的标签中提取
             TAG_REF="${{ steps.get_release.outputs.tag }}"
             N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
           fi
@@ -73,11 +117,11 @@ jobs:
 
           # 生成预期的文件名
           DATE_FORMAT=$(date +'%y-%-m-%-d')
-          IMAGES_ARCHIVE="${DATE_FORMAT}-images-${N8N_VERSION}-镜像.7z"
+          IMAGES_ARCHIVE="${DATE_FORMAT}-images-${N8N_VERSION}.7z"
           DOCKER_N8N_ARCHIVE="${DATE_FORMAT}-Docker_N8N-${N8N_VERSION}.7z"
 
           # 旧格式的文件名（兼容性检查）
-          IMAGES_ARCHIVE_OLD="${DATE_FORMAT}-images-${N8N_VERSION}-.7z"
+          IMAGES_ARCHIVE_OLD="${DATE_FORMAT}-images-${N8N_VERSION}-镜像.7z"
 
           # 检查 Release 是否存在
           if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
@@ -239,8 +283,8 @@ jobs:
           DATE_FORMAT=$(date +'%y-%-m-%-d')
           echo "date_format=${DATE_FORMAT}" >> "$GITHUB_OUTPUT"
 
-          # 文件名格式：26-1-9-images-2.2.5-镜像.7z
-          ARCHIVE_NAME="${DATE_FORMAT}-images-${N8N_VERSION}-镜像.7z"
+          # 文件名格式：26-1-9-images-2.2.5.7z
+          ARCHIVE_NAME="${DATE_FORMAT}-images-${N8N_VERSION}.7z"
           echo "archive_name=${ARCHIVE_NAME}" >> "$GITHUB_OUTPUT"
 
           echo "📦 开始使用 7zip 压缩镜像..."
@@ -472,7 +516,7 @@ jobs:
           if [ "$RELEASE_EXISTS" = true ]; then
             # 删除旧的 7zip 文件（如果存在）
             echo "🔍 检查并删除旧的文件..."
-            OLD_7Z_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | endswith("-镜像.7z")) | .name' 2>/dev/null || echo "")
+            OLD_7Z_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | endswith("-镜像.7z") or .name | endswith("-.7z")) | .name' 2>/dev/null || echo "")
             if [ -n "$OLD_7Z_ASSET" ]; then
               echo "$OLD_7Z_ASSET" | while read -r asset; do
                 [ -n "$asset" ] && gh release delete-asset "${UPSTREAM_TAG}" "$asset" --yes 2>/dev/null || true
