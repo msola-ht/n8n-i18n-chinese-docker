@@ -22,10 +22,6 @@ on:
         description: '上游标签'
         required: true
         type: string
-  workflow_run:
-    workflows: ["构建 n8n 中文社区版和企业版 Docker 镜像"]
-    types: [completed]
-    branches: [main]
 
 env:
   DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
@@ -33,8 +29,6 @@ env:
 
 jobs:
   package-7zip:
-    # 只在上游工作流成功完成时运行（workflow_run 触发）
-    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -43,43 +37,9 @@ jobs:
       - name: 拉取代码
         uses: actions/checkout@v3
 
-      - name: 从上游工作流获取版本号（workflow_run 触发）
-        id: get_version_from_workflow
-        if: github.event_name == 'workflow_run'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          echo "📥 从上游工作流获取版本信息..."
-
-          # 获取上游工作流的运行 ID
-          WORKFLOW_RUN_ID="${{ github.event.workflow_run.id }}"
-          echo "上游工作流运行 ID: ${WORKFLOW_RUN_ID}"
-
-          # 从上游工作流 check job 的输出中获取版本号
-          # 使用 GitHub API 获取 job 输出
-          N8N_VERSION=$(gh api \
-            repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs \
-            --jq '.jobs[] | select(.name == "check") | .outputs.n8n_version' | head -1)
-
-          TAG=$(gh api \
-            repos/${{ github.repository }}/actions/runs/${WORKFLOW_RUN_ID}/jobs \
-            --jq '.jobs[] | select(.name == "check") | .outputs.tag' | head -1)
-
-          if [ -z "$N8N_VERSION" ] || [ -z "$TAG" ]; then
-            echo "⚠️ 无法从上游工作流获取版本号，尝试从上游 API 获取..."
-            # 备用方案：从上游仓库 API 获取最新版本
-            latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
-            TAG=$(echo "$latest_release" | jq -r .tag_name | xargs)
-            N8N_VERSION=$(echo "${TAG#n8n@}" | xargs)
-          fi
-
-          echo "n8n_version=${N8N_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "从上游获取到版本: ${N8N_VERSION} (标签: ${TAG})"
-
       - name: 获取上游最新发布信息
         id: get_release
-        if: github.event.inputs.n8n_version == '' && github.event_name != 'workflow_run'
+        if: github.event.inputs.n8n_version == ''
         run: |
           latest_release=$(curl -s https://api.github.com/repos/${{ env.UPSTREAM_REPO }}/releases/latest)
           tag=$(echo "$latest_release" | jq -r .tag_name | xargs)
@@ -93,12 +53,8 @@ jobs:
             # 优先级1: 使用手动输入的版本号
             N8N_VERSION="${{ github.event.inputs.n8n_version }}"
             TAG_REF="n8n@${N8N_VERSION}"
-          elif [ -n "${{ steps.get_version_from_workflow.outputs.n8n_version }}" ]; then
-            # 优先级2: 使用从 workflow_run 获取的版本号
-            N8N_VERSION="${{ steps.get_version_from_workflow.outputs.n8n_version }}"
-            TAG_REF="${{ steps.get_version_from_workflow.outputs.tag }}"
           else
-            # 优先级3: 从上游获取的标签中提取
+            # 优先级2: 从上游获取的标签中提取
             TAG_REF="${{ steps.get_release.outputs.tag }}"
             N8N_VERSION=$(echo "${TAG_REF#n8n@}" | xargs)
           fi
@@ -115,13 +71,10 @@ jobs:
         run: |
           echo "🔍 检查 Release ${UPSTREAM_TAG} 是否已存在..."
 
-          # 生成预期的文件名
+          # 生成预期的文件名（带日期）
           DATE_FORMAT=$(date +'%y-%-m-%-d')
           IMAGES_ARCHIVE="${DATE_FORMAT}-images-${N8N_VERSION}.7z"
           DOCKER_N8N_ARCHIVE="${DATE_FORMAT}-Docker_N8N-${N8N_VERSION}.7z"
-
-          # 旧格式的文件名（兼容性检查）
-          IMAGES_ARCHIVE_OLD="${DATE_FORMAT}-images-${N8N_VERSION}-镜像.7z"
 
           # 检查 Release 是否存在
           if gh release view "${UPSTREAM_TAG}" >/dev/null 2>&1; then
@@ -131,49 +84,41 @@ jobs:
             # 获取 Release 中的所有文件
             ASSETS=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
 
-            # 检查旧格式的镜像压缩包是否存在
-            if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE_OLD}"; then
-              echo "⚠️ 发现旧格式文件: ${IMAGES_ARCHIVE_OLD}"
-              echo "正在删除旧格式文件..."
-              gh release delete-asset "${UPSTREAM_TAG}" "${IMAGES_ARCHIVE_OLD}" --yes 2>/dev/null || true
-              echo "✅ 已删除旧格式文件"
-            fi
-
-            # 检查镜像压缩包是否存在
-            if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}"; then
+            # 检查是否存在相同版本号的 images 压缩包（基于版本号，不限定日期）
+            if echo "$ASSETS" | grep -q "images-${N8N_VERSION}.7z"; then
               echo "images_exists=true" >> "$GITHUB_OUTPUT"
-              echo "  ✓ 镜像压缩包已存在: ${IMAGES_ARCHIVE}"
+              EXISTING_IMAGES=$(echo "$ASSETS" | grep "images-${N8N_VERSION}.7z" | head -1)
+              echo "  ✓ 镜像压缩包已存在: ${EXISTING_IMAGES}"
             else
               echo "images_exists=false" >> "$GITHUB_OUTPUT"
-              echo "  ✗ 镜像压缩包不存在: ${IMAGES_ARCHIVE}"
+              echo "  ✗ 镜像压缩包不存在（版本 ${N8N_VERSION}）"
             fi
 
-            # 检查 Docker_N8N 压缩包是否存在
-            if echo "$ASSETS" | grep -q "${DOCKER_N8N_ARCHIVE}"; then
+            # 检查是否存在相同版本号的 Docker_N8N 压缩包
+            if echo "$ASSETS" | grep -q "Docker_N8N-${N8N_VERSION}.7z"; then
               echo "docker_n8n_exists=true" >> "$GITHUB_OUTPUT"
-              echo "  ✓ Docker_N8N 压缩包已存在: ${DOCKER_N8N_ARCHIVE}"
+              EXISTING_DOCKER_N8N=$(echo "$ASSETS" | grep "Docker_N8N-${N8N_VERSION}.7z" | head -1)
+              echo "  ✓ Docker_N8N 压缩包已存在: ${EXISTING_DOCKER_N8N}"
             else
               echo "docker_n8n_exists=false" >> "$GITHUB_OUTPUT"
-              echo "  ✗ Docker_N8N 压缩包不存在: ${DOCKER_N8N_ARCHIVE}"
+              echo "  ✗ Docker_N8N 压缩包不存在（版本 ${N8N_VERSION}）"
             fi
 
             # 判断是否需要打包
-            if echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}" && echo "$ASSETS" | grep -q "${DOCKER_N8N_ARCHIVE}"; then
+            if echo "$ASSETS" | grep -q "images-${N8N_VERSION}.7z" && echo "$ASSETS" | grep -q "Docker_N8N-${N8N_VERSION}.7z"; then
               echo "skip_all=true" >> "$GITHUB_OUTPUT"
               echo ""
               echo "=========================================="
-              echo "所有文件已存在，跳过打包！"
+              echo "版本 ${N8N_VERSION} 的文件已存在，跳过打包！"
               echo "=========================================="
-            elif echo "$ASSETS" | grep -q "${IMAGES_ARCHIVE}"; then
-              # 镜像包存在，Docker_N8N 不存在
+            elif echo "$ASSETS" | grep -q "images-${N8N_VERSION}.7z"; then
               echo "skip_all=false" >> "$GITHUB_OUTPUT"
               echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
               echo ""
               echo "=========================================="
               echo "镜像包已存在，只需打包 Docker_N8N"
               echo "=========================================="
-            elif echo "$ASSETS" | grep -q "${DOCKER_N8N_ARCHIVE}"; then
-              # Docker_N8N 存在，镜像包不存在
+            elif echo "$ASSETS" | grep -q "Docker_N8N-${N8N_VERSION}.7z"; then
               echo "skip_all=false" >> "$GITHUB_OUTPUT"
               echo "need_images=true" >> "$GITHUB_OUTPUT"
               echo ""
@@ -181,7 +126,6 @@ jobs:
               echo "Docker_N8N 已存在，只需打包镜像"
               echo "=========================================="
             else
-              # 两个都不存在
               echo "skip_all=false" >> "$GITHUB_OUTPUT"
               echo "need_images=true" >> "$GITHUB_OUTPUT"
               echo "need_docker_n8n=true" >> "$GITHUB_OUTPUT"
@@ -514,14 +458,15 @@ jobs:
           fi
 
           if [ "$RELEASE_EXISTS" = true ]; then
-            # 删除旧的 7zip 文件（如果存在）
-            echo "🔍 检查并删除旧的文件..."
-            OLD_7Z_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | endswith("-镜像.7z") or .name | endswith("-.7z")) | .name' 2>/dev/null || echo "")
+            # 删除相同版本号的旧 7zip 文件（保留不同版本的历史文件）
+            echo "🔍 检查并删除相同版本的旧文件..."
+            # 查找所有包含当前版本号的 images 压缩包
+            OLD_7Z_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | contains("images-'${N8N_VERSION}'.7z")) | .name' 2>/dev/null || echo "")
             if [ -n "$OLD_7Z_ASSET" ]; then
               echo "$OLD_7Z_ASSET" | while read -r asset; do
                 [ -n "$asset" ] && gh release delete-asset "${UPSTREAM_TAG}" "$asset" --yes 2>/dev/null || true
               done
-              echo "✅ 已删除旧的 7zip 文件"
+              echo "✅ 已删除版本 ${N8N_VERSION} 的旧 7zip 文件"
             fi
 
             # 删除旧的 README 文件（如果存在）
@@ -720,12 +665,13 @@ jobs:
           fi
 
           if [ "$RELEASE_EXISTS" = true ]; then
-            # 删除旧的 Docker_N8N 文件（如果存在）
-            OLD_DOCKER_N8N_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | startswith("Docker_N8N-")) | .name' 2>/dev/null || echo "")
+            # 删除相同版本号的旧 Docker_N8N 文件（保留不同版本的历史文件）
+            OLD_DOCKER_N8N_ASSET=$(gh release view "${UPSTREAM_TAG}" --json assets --jq '.assets[] | select(.name | contains("Docker_N8N-'${N8N_VERSION}'.7z")) | .name' 2>/dev/null || echo "")
             if [ -n "$OLD_DOCKER_N8N_ASSET" ]; then
               echo "$OLD_DOCKER_N8N_ASSET" | while read -r asset; do
                 [ -n "$asset" ] && gh release delete-asset "${UPSTREAM_TAG}" "$asset" --yes 2>/dev/null || true
               done
+              echo "✅ 已删除版本 ${N8N_VERSION} 的旧 Docker_N8N 文件"
             fi
 
             # 上传新的 Docker_N8N 压缩包和说明文档

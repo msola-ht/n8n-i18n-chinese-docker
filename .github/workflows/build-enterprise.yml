@@ -542,8 +542,8 @@ jobs:
           readme-filepath: README.md
 
   trigger-package-7zip:
-    needs: [check, finalize_release, export-n8n-runners]
-    if: always() && needs.check.outputs.should_run_anything == 'true' && needs.finalize_release.result == 'success' && needs.export-n8n-runners.result == 'success'
+    needs: [check, create_release, export-n8n-runners]
+    if: always() && needs.check.outputs.should_run_anything == 'true' && needs.create_release.result == 'success' && needs.export-n8n-runners.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       actions: write
