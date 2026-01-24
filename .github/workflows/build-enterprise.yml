@@ -541,35 +541,13 @@ jobs:
           short-description: "包含所有企业功能的 n8n 中文版 Docker 镜像（仅供学习测试）"
           readme-filepath: README.md
 
-  trigger-package-7zip:
+  package-7zip:
     needs: [check, create_release]
     if: always() && needs.check.outputs.should_run_anything == 'true' && needs.create_release.result == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      actions: write
-
-    steps:
-      - name: 触发 7zip 打包工作流
-        uses: actions/github-script@v7
-        with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow: 'package-7zip.yml',
-              ref: 'main',
-              inputs: {
-                n8n_version: '${{ needs.check.outputs.n8n_version }}',
-                include_postgres: true
-              }
-            });
-            console.log('✅ 已触发 7zip 打包工作流，版本:', '${{ needs.check.outputs.n8n_version }}');
-
-      - name: 输出触发信息
-        run: |
-          echo "✅ 7zip 打包工作流已触发"
-          echo "📦 版本: ${{ needs.check.outputs.n8n_version }}"
-          echo "🔗 查看打包进度: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/package-7zip.yml"
+    uses: ./.github/workflows/package-7zip.yml
+    with:
+      n8n_version: ${{ needs.check.outputs.n8n_version }}
+      upstream_tag: ${{ needs.check.outputs.tag }}
 
   create_release:
     needs: [check, build-and-push-community, build-and-push-community-cn, build-and-push-enterprise]
